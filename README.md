@@ -37,19 +37,54 @@ A modern, high-precision dual analog and digital clock web application with mult
   - Snooze (5m, 10m, 15m, 20m) and Dismiss/Stop controls.
   - Keyboard shortcuts (<kbd>Space</kbd> or <kbd>Esc</kbd> to stop, <kbd>S</kbd> to snooze).
   - Web Notification API and vibration support.
+- **True Always-On-Top Desktop Popups (Electron App)**:
+  - Displays over any full-screen game, PowerPoint presentation, Zoom call, or code editor.
+  - Windows System Tray integration with minimize-to-tray background monitoring.
+  - Dedicated floating always-on-top alarm alert card on the active screen.
+  - Taskbar flashing and native Windows OS notifications.
+  - Pinned "Always-On-Top" toggle button right on the header toolbar.
+- **PWA & Web Notification Support**:
+  - `manifest.json` + `sw.js` (Service Worker) for installable PWA behavior and notification click focus.
+  - `documentPictureInPicture` floating mini-timer fallback for modern browsers.
 - **Persistent Storage**:
   - Alarms, preferences, and theme choices are automatically synced to `localStorage`.
 
-## Getting Started
+---
 
-Simply open `index.html` in any modern web browser or serve locally:
+## How to Run Chronos
 
-```bash
-# Python
-python -m http.server 8080
+### Option 1: True Always-On-Top Desktop App (Recommended)
+This displays alarms **over any screen, app, or game** even when minimized or working in other windows:
 
-# Or Node.js
-npx serve .
+```cmd
+# Method A: Double-click launcher
+Double-click Launch-Chronos-Desktop.bat
+
+# Method B: Command Line
+npm start
+# or
+npm run app
 ```
 
-Open [http://localhost:8080](http://localhost:8080) in your browser.
+Features in Desktop Mode:
+1. **Always-On-Top Alert**: Rings with a floating, glowing alert card directly on your active monitor.
+2. **System Tray**: Minimizing Chronos hides it quietly in the Windows system tray while alarms stay 100% active.
+3. **Pin Window**: Click the **"📌 On Top"** button in the header toolbar to pin the entire clock on top while working.
+
+---
+
+### Option 2: Local Web Server (Browser Mode)
+If you prefer running inside Chrome, Edge, or Firefox:
+
+```cmd
+# Method A: Double-click launcher
+Double-click Launch-Meeting-Clock.bat
+
+# Method B: Command Line
+npm run web
+# or
+python -m http.server 8080
+```
+
+Then open **http://localhost:8080** in your browser and click **"Enable Desktop Popups"**.
+You can also click **"📌 Floating Timer (Always On Top)"** to keep a live Picture-in-Picture window visible over other apps.

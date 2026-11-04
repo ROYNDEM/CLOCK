@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chronos Alert</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background: rgba(11, 15, 25, 0.95);
+      color: #f8fafc;
+      font-family: 'Segoe UI', -apple-system, Roboto, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 2px solid #f43f5e;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(244, 63, 94, 0.35);
+      display: flex;
+      flex-direction: column;
+      animation: alertPulse 1.2s infinite alternate ease-in-out;
+    }
+
+    @keyframes alertPulse {
+      0% {
+        border-color: #f43f5e;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(244, 63, 94, 0.35);
+      }
+      100% {
+        border-color: #fbbf24;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 35px rgba(251, 191, 36, 0.5);
+      }
+    }
+
+    .drag-header {
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: grab;
+    }
+
+    .drag-header:active {
+      cursor: grabbing;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #f43f5e;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f43f5e;
+      box-shadow: 0 0 8px #f43f5e;
+      animation: blink 0.8s infinite alternate;
+    }
+
+    @keyframes blink {
+      0% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+
+    .header-actions {
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pin-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      background: rgba(251, 191, 36, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .content {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      justify-content: center;
+      text-align: center;
+      gap: 6px;
+    }
+
+    .alarm-time {
+      font-family: 'Consolas', 'JetBrains Mono', monospace;
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: #38bdf8;
+      letter-spacing: 0.03em;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+      line-height: 1;
+    }
+
+    .alarm-label {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f8fafc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .alarm-memo {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 6px 10px;
+      max-height: 48px;
+      overflow-y: auto;
+      line-height: 1.35;
+    }
+
+    .alarm-memo.hidden {
+      display: none;
+    }
+
+    .btn-row {
+      -webkit-app-region: no-drag;
+      display: flex;
+      gap: 10px;
+      padding: 12px 18px 16px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-snooze {
+      background: rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-snooze:hover {
+      background: rgba(255, 255, 255, 0.22);
+      color: #fff;
+    }
+
+    .btn-dismiss {
+      background: #f43f5e;
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(244, 63, 94, 0.45);
+    }
+
+    .btn-dismiss:hover {
+      background: #e11d48;
+      box-shadow: 0 6px 18px rgba(244, 63, 94, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="drag-header">
+    <div class="badge">
+      <span class="pulse-dot"></span>
+      <span>MEETING ALARM</span>
+    </div>
+    <div class="header-actions">
+      <span class="pin-badge">ALWAYS ON TOP</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div id="alarmTime" class="alarm-time">00:00</div>
+    <div id="alarmLabel" class="alarm-label">Meeting Alert</div>
+    <div id="alarmMemo" class="alarm-memo hidden"></div>
+  </div>
+
+  <div class="btn-row">
+    <button id="snoozeBtn" class="btn btn-snooze" type="button">Snooze</button>
+    <button id="dismissBtn" class="btn btn-dismiss" type="button">Dismiss</button>
+  </div>
+
+  <script>
+    let isElectron = false;
+    let ipcRenderer = null;
+    try {
+      if (typeof require !== 'undefined') {
+        const electron = require('electron');
+        ipcRenderer = electron.ipcRenderer;
+        isElectron = !!ipcRenderer;
+      }
+    } catch (_) {}
+
+    const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('chronos_alarm_channel') : null;
+
+    const alarmTimeEl = document.getElementById('alarmTime');
+    const alarmLabelEl = document.getElementById('alarmLabel');
+    const alarmMemoEl = document.getElementById('alarmMemo');
+    const snoozeBtn = document.getElementById('snoozeBtn');
+    const dismissBtn = document.getElementById('dismissBtn');
+
+    function applyAlarmData(data) {
+      if (!data) return;
+      if (data.time) alarmTimeEl.textContent = data.time;
+      if (data.label) alarmLabelEl.textContent = data.label;
+      if (data.snoozeMinutes) snoozeBtn.textContent = `Snooze (${data.snoozeMinutes}m)`;
+
+      if (data.message && data.message.trim()) {
+        alarmMemoEl.textContent = data.message.trim();
+        alarmMemoEl.classList.remove('hidden');
+      } else {
+        alarmMemoEl.classList.add('hidden');
+      }
+    }
+
+    // Check URL parameters for browser popup window support
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('time')) {
+      applyAlarmData({
+        time: urlParams.get('time'),
+        label: urlParams.get('label') || 'Meeting Alert',
+        message: urlParams.get('message') || '',
+        snoozeMinutes: urlParams.get('snooze') || 10
+      });
+    }
+
+    if (isElectron && ipcRenderer) {
+      ipcRenderer.on('alert:data', (_event, data) => applyAlarmData(data));
+    }
+
+    if (channel) {
+      channel.onmessage = (event) => {
+        if (event.data) {
+          if (event.data.type === 'alert:data') {
+            applyAlarmData(event.data.data);
+          } else if (event.data.type === 'alert:dismiss' || event.data.type === 'alert:snooze') {
+            if (!isElectron) window.close();
+          }
+        }
+      };
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'chronos:alert:data') {
+        applyAlarmData(event.data.data);
+      }
+    });
+
+    function sendAction(action) {
+      if (isElectron && ipcRenderer) {
+        ipcRenderer.send('alert:action', action);
+      }
+      if (channel) {
+        channel.postMessage({ type: 'alert:action', action });
+      }
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'chronos:alert:action', action }, '*');
+        } catch (_) {}
+      }
+      try {
+        localStorage.setItem('chronos_last_action', JSON.stringify({ action, timestamp: Date.now() }));
+      } catch (_) {}
+
+      if (!isElectron) {
+        window.close();
+      }
+    }
+
+    snoozeBtn.addEventListener('click', () => sendAction('snooze'));
+    dismissBtn.addEventListener('click', () => sendAction('dismiss'));
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === ' ') {
+        e.preventDefault();
+        sendAction('dismiss');
+      } else if (e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        sendAction('snooze');
+      }
+    });
+  </script>
+</body>
+</html>

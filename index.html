@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="assets/icon.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-theme="obsidian">
@@ -26,6 +28,21 @@
       <span>Audio is muted by browser policy. Click anywhere or press enable to guarantee alarms ring aloud.</span>
     </div>
     <button id="enableAudioBtn" class="btn btn-sm btn-accent" type="button">Enable Sound</button>
+  </aside>
+
+  <!-- Protocol notice (shown automatically if opened directly via file:// instead of localhost) -->
+  <aside id="fileProtocolBanner" class="protocol-banner hidden" role="alert">
+    <div class="banner-content">
+      <span class="banner-icon">⚠️</span>
+      <div class="banner-text">
+        <strong>Notice: Opened as local file (file://)</strong> — Browsers (Chrome & Edge) disable Windows desktop popup toasts on local file paths.
+        <div class="banner-subtext">
+          To receive popups over Antigravity and other screens: run <code>.\Launch-Meeting-Clock.bat</code> (or <code>python -m http.server 8080</code>) and open <a href="http://localhost:8080" class="banner-link" target="_blank">http://localhost:8080</a>.
+          Or click <strong>"📌 Floating Always-On-Top Timer"</strong> below!
+        </div>
+      </div>
+    </div>
+    <button id="dismissProtocolBannerBtn" class="close-banner-btn" type="button" aria-label="Dismiss banner">✕</button>
   </aside>
 
   <div class="app-layout">
@@ -77,6 +94,12 @@
           <span id="currentFormatLabel" class="pill-val">12H</span>
         </button>
 
+        <!-- Desktop Always-On-Top Pin Toggle (Visible in Desktop App) -->
+        <button id="desktopPinBtn" class="pill-btn hidden" title="Toggle Window Always On Top" aria-label="Toggle Window Always On Top">
+          <span class="pill-label">📌 On Top:</span>
+          <span id="desktopPinLabel" class="pill-val">OFF</span>
+        </button>
+
         <!-- Theme Selector -->
         <div class="theme-selector-dropdown">
           <button id="themeMenuBtn" class="icon-btn" title="Change Visual Theme" aria-haspopup="true" aria-expanded="false">
@@ -112,6 +135,51 @@
 
     <!-- Main Content Area -->
     <main class="main-container">
+      <!-- Board Meeting Assistant Toolbar -->
+      <section class="meeting-bar-card" id="meetingAssistantBar" aria-label="Board Meeting Assistant">
+        <div class="meeting-bar-left">
+          <div class="meeting-title-pill">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+            <span>BOARD MEETING MODE</span>
+          </div>
+          <div class="meeting-status-chips">
+            <span class="status-chip active" id="workerStatusChip" title="Background Web Worker is active and runs reliably even when minimized on another screen">
+              <span class="pulse-dot"></span> Background Engine: Active
+            </span>
+            <button class="status-chip notif-status-btn active" id="meetingNotifPermBtn" type="button" title="Custom Chronos Alarm Popup is active">
+              <span class="notif-state-dot dot-active" id="meetingNotifDot"></span>
+              <span id="meetingNotifStatusText">Custom Alarm Popup: Active</span>
+            </button>
+          </div>
+        </div>
+        <div class="meeting-bar-actions">
+          <button id="floatingPipBtn" class="btn btn-sm btn-outline-gold" type="button" title="Opens a floating mini-timer that stays Always-On-Top of Antigravity, PowerPoint, Zoom, etc.">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="20" rx="3"></rect>
+              <rect x="11" y="11" width="9" height="9" rx="1.5" fill="currentColor"></rect>
+            </svg>
+            <span>📌 Floating Timer (Always On Top)</span>
+          </button>
+          <button id="testDesktopPopupBtn" class="btn btn-sm btn-outline-accent" type="button" title="Test how the custom alarm notification popup looks on your screen right now">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span>Test Alarm Popup</span>
+          </button>
+          <button id="quickMeetingAlarmBtn" class="btn btn-sm btn-accent" type="button" title="Quickly set a meeting alert with custom agenda note">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>New Meeting Alert</span>
+          </button>
+        </div>
+      </section>
+
       <!-- Clocks Display Section -->
       <section class="clocks-showcase view-mode-split" id="clocksShowcase" aria-label="Clock Display">
         <!-- Analog Clock Card -->
@@ -252,13 +320,24 @@
 
           <!-- Digital Quick Controls Bar -->
           <div class="quick-preset-bar">
-            <span class="quick-preset-label">Quick Nap Alarms:</span>
-            <div class="quick-btn-group">
-              <button class="quick-chip-btn" data-quick-minutes="10" type="button">+10m</button>
-              <button class="quick-chip-btn" data-quick-minutes="20" type="button">+20m</button>
-              <button class="quick-chip-btn" data-quick-minutes="30" type="button">+30m</button>
-              <button class="quick-chip-btn" data-quick-minutes="45" type="button">+45m</button>
-              <button class="quick-chip-btn" data-quick-minutes="60" type="button">+1h</button>
+            <div class="quick-row">
+              <span class="quick-preset-label">💼 Meeting Timers:</span>
+              <div class="quick-btn-group">
+                <button class="quick-chip-btn meeting-preset" data-meeting-minutes="5" data-meeting-label="5m Wrap-Up" data-meeting-msg="5 minutes remaining for current agenda discussion" type="button">+5m Wrap Up</button>
+                <button class="quick-chip-btn meeting-preset" data-meeting-minutes="10" data-meeting-label="10m Agenda Item" data-meeting-msg="Time to advance to next agenda discussion item" type="button">+10m Topic</button>
+                <button class="quick-chip-btn meeting-preset" data-meeting-minutes="15" data-meeting-label="15m Session Break" data-meeting-msg="15-minute executive recess / committee break" type="button">+15m Break</button>
+                <button class="quick-chip-btn meeting-preset" data-meeting-minutes="30" data-meeting-label="30m Review Block" data-meeting-msg="30-minute strategic review session completed" type="button">+30m Review</button>
+                <button class="quick-chip-btn meeting-preset" data-meeting-minutes="60" data-meeting-label="Meeting Adjourned" data-meeting-msg="Board meeting session scheduled time complete" type="button">+1h Adjourn</button>
+              </div>
+            </div>
+            <div class="quick-row">
+              <span class="quick-preset-label">☕ Quick Naps:</span>
+              <div class="quick-btn-group">
+                <button class="quick-chip-btn" data-quick-minutes="10" type="button">+10m</button>
+                <button class="quick-chip-btn" data-quick-minutes="20" type="button">+20m</button>
+                <button class="quick-chip-btn" data-quick-minutes="30" type="button">+30m</button>
+                <button class="quick-chip-btn" data-quick-minutes="45" type="button">+45m</button>
+              </div>
             </div>
           </div>
         </div>
@@ -384,7 +463,16 @@
         <!-- Alarm Label / Name -->
         <div class="form-section">
           <label class="form-label" for="alarmLabelInput">Label / Title</label>
-          <input type="text" id="alarmLabelInput" class="text-input" placeholder="e.g. Wake Up, Stand Up, Meeting, Medication" maxlength="40" value="Wake Up">
+          <input type="text" id="alarmLabelInput" class="text-input" placeholder="e.g. Board Meeting, Review Item 3, Executive Wrap-Up" maxlength="40" value="Board Meeting">
+        </div>
+
+        <!-- Meeting Note / Popup Message -->
+        <div class="form-section">
+          <label class="form-label" for="alarmMessageInput">
+            Meeting Note / Popup Message (Optional)
+          </label>
+          <textarea id="alarmMessageInput" class="text-input textarea-input" rows="2" placeholder="e.g. Agenda Item 3: Q3 Financial Review • 5-min warning across screens"></textarea>
+          <span class="form-hint">This custom message is displayed in the Windows desktop popup toast across any screen or presentation.</span>
         </div>
 
         <!-- Tone Selection with Preview Button -->
@@ -400,16 +488,30 @@
           </div>
           
           <select id="alarmToneSelect" class="select-input">
-            <option value="classic-bell">🔔 Classic Mechanical Bell (Vibrant & Loud)</option>
-            <option value="digital-beep">⏰ Retro Digital Watch Beep (4-Beep Cadence)</option>
-            <option value="crystal-chime" selected>✨ Crystal Singing Chime (Gentle & Peaceful)</option>
-            <option value="marimba-sunshine">🎵 Marimba Sunshine (Melodic & Warm)</option>
-            <option value="cosmic-radar">🚀 Cosmic Radar Pulse (Modern Sci-Fi)</option>
-            <option value="gentle-harp">🎼 Soothing Acoustic Harp (Relaxing Awakening)</option>
-            <option value="energetic-siren">⚡ Energetic Siren (Urgent Wakeup)</option>
-            <option value="birds-chirping">🐦 Forest Birdsong (Natural Morning Chirps)</option>
+            <optgroup label="🕰️ Authentic Grandfather Clock Chimes">
+              <option value="grandfather-westminster" selected>🕰️ Grandfather Clock • Westminster Quarters</option>
+              <option value="grandfather-cathedral-gong">🕰️ Grandfather Clock • Deep Cathedral Gong</option>
+              <option value="grandfather-whittington">🕰️ Grandfather Clock • Whittington Chimes</option>
+              <option value="grandfather-single-strike">🕰️ Grandfather Clock • Executive Single Chime (Discreet)</option>
+              <option value="grandfather-st-michael">🕰️ Grandfather Clock • St. Michael Chime</option>
+            </optgroup>
+            <optgroup label="🔕 Silent / Discretion (No Sound)">
+              <option value="none">🔕 None • Silent (Visual & Desktop Popup Only)</option>
+            </optgroup>
+            <optgroup label="✨ Melodic & Peaceful">
+              <option value="crystal-chime">✨ Crystal Singing Chime (Gentle & Peaceful)</option>
+              <option value="marimba-sunshine">🎵 Marimba Sunshine (Melodic & Warm)</option>
+              <option value="gentle-harp">🎼 Soothing Acoustic Harp (Relaxing Awakening)</option>
+              <option value="birds-chirping">🐦 Forest Birdsong (Natural Morning Chirps)</option>
+            </optgroup>
+            <optgroup label="⏰ Standard Alarms & Bells">
+              <option value="classic-bell">🔔 Classic Mechanical Bell (Vibrant & Loud)</option>
+              <option value="digital-beep">⏰ Retro Digital Watch Beep (4-Beep Cadence)</option>
+              <option value="cosmic-radar">🚀 Cosmic Radar Pulse (Modern Sci-Fi)</option>
+              <option value="energetic-siren">⚡ Energetic Siren (Urgent Wakeup)</option>
+            </optgroup>
           </select>
-          <span class="form-hint">Rich procedural audio synthesized directly via Web Audio API.</span>
+          <span class="form-hint">Rich procedural acoustic audio synthesized directly via Web Audio API.</span>
         </div>
 
         <!-- Repeat Days Selector -->
@@ -465,6 +567,66 @@
     </div>
   </dialog>
 
+  <!-- CUSTOM CHRONOS ALARM NOTIFICATION POPUP (Independent custom-styled alarm popup from Chronos, not Chrome) -->
+  <aside id="customAlarmPopup" class="custom-alarm-popup hidden" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="custom-popup-pulse-border" aria-hidden="true"></div>
+    <div class="custom-popup-header" id="customPopupHeader" title="Drag to reposition notification popup">
+      <div class="custom-popup-badge">
+        <span class="custom-popup-pulse-dot"></span>
+        <span class="custom-popup-badge-text">CHRONOS ALARM</span>
+      </div>
+      <div class="custom-popup-controls">
+        <span class="custom-popup-tag">ALERT ACTIVE</span>
+        <button id="customPopupCloseBtn" class="custom-popup-close-btn" type="button" title="Dismiss alarm" aria-label="Dismiss alarm">✕</button>
+      </div>
+    </div>
+
+    <div class="custom-popup-content">
+      <div class="custom-popup-icon-wrap" aria-hidden="true">
+        <svg class="bell-shake" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+        </svg>
+      </div>
+
+      <div class="custom-popup-details">
+        <div class="custom-popup-time-row">
+          <span id="customPopupTime" class="custom-popup-time">00:00</span>
+          <span id="customPopupToneTag" class="custom-popup-tone-tag">
+            <span class="sound-wave-bars">
+              <span class="sw-bar"></span>
+              <span class="sw-bar"></span>
+              <span class="sw-bar"></span>
+            </span>
+            <span id="customPopupToneName">Tone</span>
+          </span>
+        </div>
+        <h3 id="customPopupLabel" class="custom-popup-label">Meeting Alert</h3>
+        <div id="customPopupMemoBox" class="custom-popup-memo hidden">
+          <span class="memo-icon">📝</span>
+          <span id="customPopupMemoText"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="custom-popup-actions">
+      <button id="customPopupSnoozeBtn" class="btn btn-sm btn-popup-snooze" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span id="customPopupSnoozeLabel">Snooze (10m)</span>
+      </button>
+      <button id="customPopupDismissBtn" class="btn btn-sm btn-popup-dismiss" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+        <span>Dismiss / Stop</span>
+      </button>
+    </div>
+  </aside>
+
   <!-- ACTIVE RINGING ALARM MODAL -->
   <dialog id="ringingModal" class="ringing-dialog" aria-modal="true" role="alertdialog" aria-labelledby="ringingTitle">
     <div class="ringing-card">
@@ -485,6 +647,21 @@
       <h2 id="ringingTitle" class="ringing-time">07:00 AM</h2>
       <p id="ringingLabel" class="ringing-label">Wake Up</p>
       <div id="ringingToneName" class="ringing-tone-badge">Crystal Singing Chime</div>
+
+      <!-- Optional Meeting Note / Agenda Memo -->
+      <div id="ringingMemoBox" class="ringing-memo-box hidden">
+        <div class="memo-header">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>MEETING AGENDA NOTE</span>
+        </div>
+        <p id="ringingMemoText" class="ringing-memo-text"></p>
+      </div>
 
       <!-- Actions: Snooze or Stop -->
       <div class="ringing-actions">

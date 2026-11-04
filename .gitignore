@@ -2,6 +2,12 @@
 .DS_Store
 Thumbs.db
 
+# Dependencies
+node_modules/
+
+# Local machine lock / license
+.chronos-license
+
 # Editor directories
 .vscode/
 .idea/

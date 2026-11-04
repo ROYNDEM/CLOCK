@@ -23,6 +23,7 @@ class ChronosApp {
     this.timeFormattedPreview = document.getElementById('timeFormattedPreview');
     this.alarmTargetDeltaHint = document.getElementById('alarmTargetDeltaHint');
     this.alarmLabelInput = document.getElementById('alarmLabelInput');
+    this.alarmMessageInput = document.getElementById('alarmMessageInput');
     this.alarmToneSelect = document.getElementById('alarmToneSelect');
     this.previewToneBtn = document.getElementById('previewToneBtn');
     this.previewPlayIcon = document.getElementById('previewPlayIcon');
@@ -46,12 +47,36 @@ class ChronosApp {
     this.testSoundBtn = document.getElementById('testSoundBtn');
     this.notifPermBtn = document.getElementById('notifPermBtn');
 
+    // Board Meeting Toolbar Elements
+    this.testDesktopPopupBtn = document.getElementById('testDesktopPopupBtn');
+    this.quickMeetingAlarmBtn = document.getElementById('quickMeetingAlarmBtn');
+    this.meetingNotifPermBtn = document.getElementById('meetingNotifPermBtn');
+    this.meetingNotifDot = document.getElementById('meetingNotifDot');
+    this.meetingNotifStatusText = document.getElementById('meetingNotifStatusText');
+    this.floatingPipBtn = document.getElementById('floatingPipBtn');
+    this.desktopPinBtn = document.getElementById('desktopPinBtn');
+    this.desktopPinLabel = document.getElementById('desktopPinLabel');
+    this.fileProtocolBanner = document.getElementById('fileProtocolBanner');
+    this.dismissProtocolBannerBtn = document.getElementById('dismissProtocolBannerBtn');
+
+    // Always-On-Top Floating Window
+    this.pipWindow = null;
+
     this.initAudioUnblocker();
     this.initViewModes();
     this.initThemes();
     this.initModalForm();
     this.initQuickNaps();
     this.initNotifications();
+    this.initBoardMeetingControls();
+    this.initProtocolCheck();
+    this.initFloatingPiP();
+    this.initDesktopIntegration();
+
+    // Heartbeat to update floating PiP window clock
+    setInterval(() => {
+      this.updatePiP();
+    }, 1000);
   }
 
   /* -------------------------------------------------------------
@@ -166,61 +191,455 @@ class ChronosApp {
   }
 
   /* -------------------------------------------------------------
-     NOTIFICATIONS PERMISSION
+     NOTIFICATIONS CONTROLLER (Custom Alarm Popups)
      ------------------------------------------------------------- */
   initNotifications() {
-    if (!('Notification' in window) && this.notifPermBtn) {
-      this.notifPermBtn.style.display = 'none';
-      return;
+    // Register Service Worker for PWA when on web
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.log('ServiceWorker registration note:', err);
+      });
     }
 
     this.updateNotifBtnState();
 
+    const triggerCustomPopupTest = () => {
+      if (window.chronosAlarms) {
+        window.chronosAlarms.sendTestNotification('Item 3: Executive Committee Review • Custom alarm notification test');
+        this.showQuickToast('🔔 Custom Alarm Popup is active and displayed!');
+      }
+    };
+
     if (this.notifPermBtn) {
-      this.notifPermBtn.addEventListener('click', async () => {
-        if (Notification.permission === 'default') {
-          const res = await Notification.requestPermission();
-          this.updateNotifBtnState();
-          if (res === 'granted') {
-            new Notification('CHRONOS Clocks', {
-              body: 'Alarm notifications are now enabled!',
-              icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><circle cx="12" cy="12" r="10"/></svg>'
-            });
-          }
-        } else if (Notification.permission === 'granted') {
-          alert('Notification alerts for alarms are already enabled on this device.');
-        } else {
-          alert('Notifications were blocked in your browser settings. Please enable them in site settings.');
-        }
-      });
+      this.notifPermBtn.addEventListener('click', triggerCustomPopupTest);
+    }
+    if (this.meetingNotifPermBtn) {
+      this.meetingNotifPermBtn.addEventListener('click', triggerCustomPopupTest);
     }
   }
 
   updateNotifBtnState() {
-    if (!this.notifPermBtn) return;
-    if (Notification.permission === 'granted') {
+    // Chronos Custom Alarm Notification is active and custom-styled directly in the app
+    if (this.notifPermBtn) {
       this.notifPermBtn.style.color = 'var(--accent-secondary)';
-      this.notifPermBtn.title = 'Desktop Notifications: Active';
-    } else {
-      this.notifPermBtn.style.color = 'var(--text-muted)';
-      this.notifPermBtn.title = 'Click to enable System Notifications';
+      this.notifPermBtn.title = 'Custom Alarm Popup: Active (Displays custom Chronos notification directly on screen)';
+    }
+
+    // Meeting Assistant Toolbar Chip
+    if (this.meetingNotifStatusText) {
+      this.meetingNotifStatusText.textContent = 'Custom Alarm Popup: Active';
+    }
+
+    if (this.meetingNotifDot) {
+      this.meetingNotifDot.className = 'notif-state-dot dot-active';
+    }
+
+    if (this.meetingNotifPermBtn) {
+      this.meetingNotifPermBtn.classList.add('active');
+      this.meetingNotifPermBtn.title = 'Custom Alarm Popup: Active (Displays custom Chronos notification directly on screen)';
     }
   }
 
   /* -------------------------------------------------------------
-     QUICK NAP PRESETS
+     QUICK NAP & MEETING PRESETS
      ------------------------------------------------------------- */
   initQuickNaps() {
-    const quickButtons = document.querySelectorAll('.quick-chip-btn');
+    // Quick Nap Buttons
+    const quickButtons = document.querySelectorAll('.quick-chip-btn:not(.meeting-preset)');
     quickButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const mins = Number(btn.dataset.quickMinutes);
         if (mins && window.chronosAlarms) {
-          window.chronosAlarms.addQuickAlarm(mins);
+          window.chronosAlarms.addQuickAlarm(mins, `Quick ${mins}m Nap`, '', 'crystal-chime');
           this.showQuickToast(`Added ${mins}m nap alarm!`);
         }
       });
     });
+
+    // Meeting Quick Presets
+    const meetingButtons = document.querySelectorAll('.meeting-preset');
+    meetingButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mins = Number(btn.dataset.meetingMinutes);
+        const label = btn.dataset.meetingLabel || `Meeting ${mins}m Alert`;
+        const msg = btn.dataset.meetingMsg || `Scheduled ${mins}m meeting checkpoint`;
+
+        if (mins && window.chronosAlarms) {
+          window.chronosAlarms.addQuickAlarm(mins, label, msg, 'grandfather-westminster');
+          this.showQuickToast(`Added ${mins}m Meeting Timer: ${label}`);
+        }
+      });
+    });
+  }
+
+  /* -------------------------------------------------------------
+     BOARD MEETING ASSISTANT TOOLBAR CONTROLS
+     ------------------------------------------------------------- */
+  initBoardMeetingControls() {
+    // Test Custom Alarm Notification button
+    if (this.testDesktopPopupBtn) {
+      this.testDesktopPopupBtn.addEventListener('click', () => {
+        if (window.chronosAlarms) {
+          const sent = window.chronosAlarms.sendTestNotification(
+            'Item 3: Executive Committee Review • Custom alarm notification test'
+          );
+          if (sent) {
+            this.showQuickToast('🔔 Custom Alarm Popup displayed! Test Snooze or Dismiss.');
+          }
+        }
+      });
+    }
+
+    // Set Meeting Alert button
+    if (this.quickMeetingAlarmBtn) {
+      this.quickMeetingAlarmBtn.addEventListener('click', () => {
+        this.openAddModal({
+          label: 'Board Meeting Checkpoint',
+          message: 'Item 3: Review Financial Forecast & Vote on Resolutions (5-min warning)',
+          tone: 'grandfather-westminster'
+        });
+      });
+    }
+  }
+
+  /* -------------------------------------------------------------
+     PROTOCOL CHECK (file:// vs http://localhost)
+     ------------------------------------------------------------- */
+  initProtocolCheck() {
+    // If running inside Electron desktop app, suppress browser file:// protocol warning
+    if (window.chronosDesktop && window.chronosDesktop.isDesktop) {
+      if (this.fileProtocolBanner) {
+        this.fileProtocolBanner.classList.add('hidden');
+      }
+      return;
+    }
+
+    const isFile = window.location.protocol === 'file:';
+    if (isFile && this.fileProtocolBanner) {
+      this.fileProtocolBanner.classList.remove('hidden');
+
+      if (this.dismissProtocolBannerBtn) {
+        this.dismissProtocolBannerBtn.addEventListener('click', () => {
+          this.fileProtocolBanner.classList.add('hidden');
+        });
+      }
+
+      if (this.meetingNotifStatusText) {
+        this.meetingNotifStatusText.textContent = 'Desktop Popups: Run via Localhost or Desktop App';
+      }
+    }
+  }
+
+  /* -------------------------------------------------------------
+     ELECTRON DESKTOP INTEGRATION (Always-on-top pin & status)
+     ------------------------------------------------------------- */
+  initDesktopIntegration() {
+    if (!window.chronosDesktop || !window.chronosDesktop.isDesktop) return;
+
+    if (this.desktopPinBtn) {
+      this.desktopPinBtn.classList.remove('hidden');
+
+      let isPinned = false;
+      if (typeof window.chronosDesktop.getAlwaysOnTop === 'function') {
+        window.chronosDesktop.getAlwaysOnTop().then(flag => {
+          isPinned = Boolean(flag);
+          this.updateDesktopPinUI(isPinned);
+        }).catch(() => {});
+      }
+
+      this.desktopPinBtn.addEventListener('click', () => {
+        isPinned = !isPinned;
+        if (typeof window.chronosDesktop.setAlwaysOnTop === 'function') {
+          window.chronosDesktop.setAlwaysOnTop(isPinned);
+        }
+        this.updateDesktopPinUI(isPinned);
+        this.showQuickToast(isPinned ? '📌 Chronos pinned Always-On-Top' : 'Chronos unpinned from top');
+      });
+
+      if (typeof window.chronosDesktop.onToggleAlwaysOnTop === 'function') {
+        window.chronosDesktop.onToggleAlwaysOnTop((flag) => {
+          isPinned = Boolean(flag);
+          this.updateDesktopPinUI(isPinned);
+        });
+      }
+    }
+  }
+
+  updateDesktopPinUI(isPinned) {
+    if (this.desktopPinBtn && this.desktopPinLabel) {
+      this.desktopPinLabel.textContent = isPinned ? 'ON' : 'OFF';
+      this.desktopPinBtn.classList.toggle('active', isPinned);
+      this.desktopPinLabel.style.color = isPinned ? 'var(--alarm-gold)' : 'var(--text-muted)';
+    }
+  }
+
+  /* -------------------------------------------------------------
+     ALWAYS-ON-TOP FLOATING MEETING TIMER (Document Picture-in-Picture)
+     Stays physically floating over Antigravity, PowerPoint, Zoom, etc.
+     ------------------------------------------------------------- */
+  initFloatingPiP() {
+    if (this.floatingPipBtn) {
+      this.floatingPipBtn.addEventListener('click', async () => {
+        await this.toggleFloatingPiP();
+      });
+    }
+  }
+
+  async toggleFloatingPiP() {
+    if (this.pipWindow && !this.pipWindow.closed) {
+      this.pipWindow.close();
+      this.pipWindow = null;
+      if (this.floatingPipBtn) this.floatingPipBtn.classList.remove('active');
+      return;
+    }
+
+    if ('documentPictureInPicture' in window) {
+      try {
+        this.pipWindow = await window.documentPictureInPicture.requestWindow({
+          width: 380,
+          height: 195
+        });
+        this.setupPiPContent(this.pipWindow);
+      } catch (err) {
+        console.warn('Document Picture-in-Picture failed, falling back to popup window', err);
+        this.openMiniPopupWindow();
+      }
+    } else {
+      this.openMiniPopupWindow();
+    }
+  }
+
+  openMiniPopupWindow() {
+    const w = 380;
+    const h = 210;
+    const left = window.screen.width - w - 24;
+    const top = 60;
+    this.pipWindow = window.open('', 'ChronosFloatingMeetingTimer', `width=${w},height=${h},top=${top},left=${left},resizable=yes`);
+    if (this.pipWindow) {
+      this.setupPiPContent(this.pipWindow);
+    } else {
+      alert('Popup was blocked by your browser. Please allow popups for this site to use the floating timer.');
+    }
+  }
+
+  setupPiPContent(win) {
+    win.document.title = 'CHRONOS • Always-On-Top Meeting Timer';
+
+    win.document.head.innerHTML = `
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: 'Segoe UI', -apple-system, Roboto, sans-serif;
+          background: #0b0f19;
+          color: #f8fafc;
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          height: 100vh;
+          user-select: none;
+          transition: all 0.3s ease;
+        }
+        body.is-ringing {
+          background: #240a15 !important;
+          border: 3px solid #f43f5e;
+          animation: pipPulseBorder 0.8s infinite alternate;
+        }
+        @keyframes pipPulseBorder {
+          0% { border-color: #f43f5e; box-shadow: inset 0 0 20px rgba(244,63,94,0.5); }
+          100% { border-color: #fbbf24; box-shadow: inset 0 0 35px rgba(251,191,36,0.7); }
+        }
+        .pip-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 0.72rem;
+          color: #94a3b8;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .pip-badge {
+          background: rgba(56, 189, 248, 0.15);
+          color: #38bdf8;
+          padding: 2px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        .pip-time {
+          font-family: 'JetBrains Mono', Consolas, monospace;
+          font-size: 2.1rem;
+          font-weight: 800;
+          color: #38bdf8;
+          letter-spacing: 0.02em;
+          text-align: center;
+          margin: 3px 0;
+          text-shadow: 0 0 15px rgba(56, 189, 248, 0.45);
+        }
+        .pip-next {
+          font-size: 0.76rem;
+          color: #cbd5e1;
+          text-align: center;
+          background: rgba(15, 23, 42, 0.85);
+          padding: 4px 10px;
+          border-radius: 6px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        /* Ringing View */
+        .pip-alert-box {
+          display: none;
+          flex-direction: column;
+          gap: 5px;
+          background: rgba(244, 63, 94, 0.25);
+          border: 1px solid rgba(244, 63, 94, 0.6);
+          border-radius: 8px;
+          padding: 8px 10px;
+          text-align: center;
+        }
+        body.is-ringing .pip-default-view { display: none; }
+        body.is-ringing .pip-alert-box { display: flex; }
+        .pip-alert-title {
+          font-size: 0.82rem;
+          font-weight: 800;
+          color: #f43f5e;
+          letter-spacing: 0.05em;
+        }
+        .pip-alert-memo {
+          font-size: 0.86rem;
+          color: #fff;
+          font-weight: 600;
+          line-height: 1.3;
+          max-height: 48px;
+          overflow-y: auto;
+        }
+        .pip-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 4px;
+        }
+        .pip-btn {
+          flex: 1;
+          padding: 7px;
+          border-radius: 6px;
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+          border: none;
+          transition: transform 0.1s;
+        }
+        .pip-btn:active { transform: scale(0.97); }
+        .pip-dismiss {
+          background: #f43f5e;
+          color: #fff;
+          box-shadow: 0 2px 8px rgba(244, 63, 94, 0.4);
+        }
+        .pip-dismiss:hover { background: #e11d48; }
+        .pip-snooze {
+          background: rgba(255, 255, 255, 0.15);
+          color: #f8fafc;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .pip-snooze:hover { background: rgba(255, 255, 255, 0.25); }
+      </style>
+      <div class="pip-header">
+        <span>CHRONOS MEETING TIMER</span>
+        <span class="pip-badge">ALWAYS ON TOP</span>
+      </div>
+
+      <div class="pip-default-view">
+        <div id="pipTime" class="pip-time">12:00:00 PM</div>
+        <div id="pipNext" class="pip-next">Loading meeting schedule...</div>
+      </div>
+
+      <div class="pip-alert-box" id="pipAlertBox">
+        <div class="pip-alert-title" id="pipAlertTitle">⏰ MEETING ALERT</div>
+        <div class="pip-alert-memo" id="pipAlertMemo">Agenda Checkpoint Reached</div>
+        <div class="pip-actions">
+          <button id="pipSnoozeBtn" class="pip-btn pip-snooze" type="button">Snooze (5m)</button>
+          <button id="pipDismissBtn" class="pip-btn pip-dismiss" type="button">Dismiss / Stop</button>
+        </div>
+      </div>
+    `;
+
+    // Wire buttons
+    const snoozeBtn = win.document.getElementById('pipSnoozeBtn');
+    const dismissBtn = win.document.getElementById('pipDismissBtn');
+
+    if (snoozeBtn) {
+      snoozeBtn.addEventListener('click', () => {
+        if (window.chronosAlarms) window.chronosAlarms.snoozeCurrentAlarm();
+      });
+    }
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => {
+        if (window.chronosAlarms) window.chronosAlarms.dismissCurrentAlarm();
+      });
+    }
+
+    win.addEventListener('unload', () => {
+      this.pipWindow = null;
+      if (this.floatingPipBtn) {
+        this.floatingPipBtn.classList.remove('active');
+      }
+    });
+
+    if (this.floatingPipBtn) {
+      this.floatingPipBtn.classList.add('active');
+    }
+
+    this.showQuickToast('📌 Always-On-Top Meeting Timer opened! It floats over all apps.');
+    this.updatePiP();
+  }
+
+  updatePiP() {
+    if (!this.pipWindow || this.pipWindow.closed) return;
+    try {
+      const doc = this.pipWindow.document;
+      const timeEl = doc.getElementById('pipTime');
+      const nextEl = doc.getElementById('pipNext');
+      const alertTitle = doc.getElementById('pipAlertTitle');
+      const alertMemo = doc.getElementById('pipAlertMemo');
+
+      // Update time
+      const now = new Date();
+      const is24 = window.chronosClock ? window.chronosClock.is24Hour : false;
+      let h = now.getHours();
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      let ampm = '';
+
+      if (!is24) {
+        ampm = h >= 12 ? ' PM' : ' AM';
+        h = h % 12 || 12;
+      }
+      const formatted = `${String(h).padStart(2, '0')}:${m}:${s}${ampm}`;
+      if (timeEl) timeEl.textContent = formatted;
+
+      // Check active ringing alarm
+      const ringing = window.chronosAlarms ? window.chronosAlarms.activeRingingAlarm : null;
+      if (ringing) {
+        doc.body.classList.add('is-ringing');
+        if (alertTitle) alertTitle.textContent = `⏰ ${ringing.label || 'MEETING ALERT'}`;
+        if (alertMemo) alertMemo.textContent = ringing.message || 'Scheduled meeting target reached!';
+      } else {
+        doc.body.classList.remove('is-ringing');
+        if (window.chronosAlarms && nextEl) {
+          const next = window.chronosAlarms.getNextAlarm();
+          if (next) {
+            const totalSecs = Math.max(0, Math.floor(next.diffMs / 1000));
+            const mins = Math.floor(totalSecs / 60);
+            const secs = totalSecs % 60;
+            nextEl.textContent = `Next in ${mins}m ${secs}s: ${next.alarm.label}`;
+          } else {
+            nextEl.textContent = 'No upcoming meeting alerts';
+          }
+        }
+      }
+    } catch (e) {
+      // Window might be transitioning
+    }
   }
 
   showQuickToast(msg) {
@@ -284,6 +703,13 @@ class ChronosApp {
       });
     }
 
+    // Tone select change listener (handles mute when 'none' is chosen)
+    if (this.alarmToneSelect) {
+      this.alarmToneSelect.addEventListener('change', () => {
+        this.handleToneChange();
+      });
+    }
+
     // Tone preview button
     if (this.previewToneBtn) {
       this.previewToneBtn.addEventListener('click', () => {
@@ -320,27 +746,46 @@ class ChronosApp {
     }
   }
 
-  openAddModal() {
+  handleToneChange() {
+    const isSilent = this.alarmToneSelect.value === 'none';
+    if (isSilent) {
+      if (this.alarmVolumeRange) this.alarmVolumeRange.disabled = true;
+      if (this.volumeValueLabel) this.volumeValueLabel.textContent = 'Muted (0%)';
+      if (this.previewToneLabel) this.previewToneLabel.textContent = 'Silent (Visual Only)';
+    } else {
+      if (this.alarmVolumeRange) {
+        this.alarmVolumeRange.disabled = false;
+        if (this.volumeValueLabel) this.volumeValueLabel.textContent = `${this.alarmVolumeRange.value}%`;
+      }
+      if (this.previewToneLabel) this.previewToneLabel.textContent = 'Preview Sound';
+    }
+  }
+
+  openAddModal(defaults = {}) {
     this.alarmEditId.value = '';
-    this.modalTitle.textContent = 'Set New Alarm';
+    this.modalTitle.textContent = defaults.modalTitle || 'Set New Alarm';
     this.saveBtnLabel.textContent = 'Save Alarm';
 
-    // Suggest default time: next half hour
+    // Suggest default time: next 15 or 30 minutes
     const now = new Date();
     now.setMinutes(now.getMinutes() + 15);
     const h = String(now.getHours()).padStart(2, '0');
     const m = String(now.getMinutes()).padStart(2, '0');
 
     this.alarmTimeInput.value = `${h}:${m}`;
-    this.alarmLabelInput.value = 'Wake Up';
-    this.alarmToneSelect.value = 'crystal-chime';
-    this.alarmSnoozeSelect.value = '10';
+    this.alarmLabelInput.value = defaults.label || 'Board Meeting Alert';
+    if (this.alarmMessageInput) {
+      this.alarmMessageInput.value = defaults.message || 'Agenda checkpoint • Time limit reached for current topic';
+    }
+    this.alarmToneSelect.value = defaults.tone || 'grandfather-westminster';
+    this.alarmSnoozeSelect.value = '5';
     this.alarmVolumeRange.value = '80';
     this.volumeValueLabel.textContent = '80%';
 
-    // Default: Every day
-    this.applyRepeatPreset('daily');
+    // Default: Every day or Weekdays for meetings
+    this.applyRepeatPreset(defaults.label ? 'weekdays' : 'daily');
 
+    this.handleToneChange();
     this.updateTimePreviewBadge();
     this.stopTonePreview();
 
@@ -358,9 +803,12 @@ class ChronosApp {
 
     this.alarmTimeInput.value = alarm.time;
     this.alarmLabelInput.value = alarm.label || '';
-    this.alarmToneSelect.value = alarm.tone || 'crystal-chime';
-    this.alarmSnoozeSelect.value = String(alarm.snoozeMinutes || 10);
-    this.alarmVolumeRange.value = String(alarm.volume || 80);
+    if (this.alarmMessageInput) {
+      this.alarmMessageInput.value = alarm.message || '';
+    }
+    this.alarmToneSelect.value = alarm.tone || 'grandfather-westminster';
+    this.alarmSnoozeSelect.value = String(alarm.snoozeMinutes || 5);
+    this.alarmVolumeRange.value = String(alarm.volume !== undefined ? alarm.volume : 80);
     this.volumeValueLabel.textContent = `${alarm.volume || 80}%`;
 
     // Set day checkboxes
@@ -368,6 +816,7 @@ class ChronosApp {
       cb.checked = alarm.repeatDays.includes(Number(cb.value));
     });
 
+    this.handleToneChange();
     this.syncPresetChipsFromCheckboxes();
     this.updateTimePreviewBadge();
     this.stopTonePreview();
@@ -465,6 +914,11 @@ class ChronosApp {
       this.stopTonePreview();
     } else {
       const toneId = this.alarmToneSelect.value;
+      if (toneId === 'none') {
+        this.showQuickToast('🔕 Silent Mode selected - No audio will play.');
+        return;
+      }
+
       const vol = Number(this.alarmVolumeRange.value);
 
       if (window.chronosAudio) {
@@ -487,7 +941,8 @@ class ChronosApp {
     }
     if (this.previewToneBtn) {
       this.previewToneBtn.classList.remove('is-playing');
-      this.previewToneLabel.textContent = 'Preview Sound';
+      const isSilent = this.alarmToneSelect && this.alarmToneSelect.value === 'none';
+      this.previewToneLabel.textContent = isSilent ? 'Silent (Visual Only)' : 'Preview Sound';
       this.previewPlayIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
     }
   }
@@ -503,10 +958,11 @@ class ChronosApp {
     const alarmData = {
       id: this.alarmEditId.value || undefined,
       time: timeVal,
-      label: this.alarmLabelInput.value.trim() || 'Alarm',
+      label: this.alarmLabelInput.value.trim() || 'Meeting Alert',
+      message: this.alarmMessageInput ? this.alarmMessageInput.value.trim() : '',
       tone: this.alarmToneSelect.value,
       volume: Number(this.alarmVolumeRange.value) || 80,
-      snoozeMinutes: Number(this.alarmSnoozeSelect.value) || 10,
+      snoozeMinutes: Number(this.alarmSnoozeSelect.value) || 5,
       repeatDays: checkedDays,
       enabled: true
     };
@@ -522,7 +978,7 @@ class ChronosApp {
       this.alarmModal.removeAttribute('open');
     }
 
-    this.showQuickToast(alarmData.id ? 'Alarm updated!' : 'New alarm scheduled!');
+    this.showQuickToast(alarmData.id ? 'Meeting alert updated!' : 'New meeting alert scheduled!');
   }
 }
 

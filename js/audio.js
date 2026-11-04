@@ -16,37 +16,79 @@ class ChronosAudioEngine {
 
     // Tone metadata
     this.tones = {
-      'classic-bell': {
-        name: 'Classic Mechanical Bell',
-        description: 'Vibrant dual metallic bells with rapid strike vibration'
+      // Grandfather Clock Tones
+      'grandfather-westminster': {
+        name: 'Grandfather Clock • Westminster Quarters',
+        description: 'Authentic 4-phrase Westminster tubular bell chime followed by deep hour gong strike',
+        category: 'grandfather'
       },
-      'digital-beep': {
-        name: 'Retro Digital Watch',
-        description: 'Iconic 4-beep digital watch cadence'
+      'grandfather-cathedral-gong': {
+        name: 'Grandfather Clock • Deep Cathedral Gong',
+        description: 'Resonant low bronze pendulum clock gong with slow harmonic 4-second decay',
+        category: 'grandfather'
       },
+      'grandfather-whittington': {
+        name: 'Grandfather Clock • Whittington Chimes',
+        description: 'Historic 8-bell cascading chime sequence from St. Mary-le-Bow',
+        category: 'grandfather'
+      },
+      'grandfather-single-strike': {
+        name: 'Grandfather Clock • Executive Single Chime',
+        description: 'Discreet, dignified single bronze chime strike designed specifically for board meetings',
+        category: 'grandfather'
+      },
+      'grandfather-st-michael': {
+        name: 'Grandfather Clock • St. Michael Chime',
+        description: 'Melodic historic 4-bell chime sequence with bright acoustic bronze resonance',
+        category: 'grandfather'
+      },
+      // Silent Option
+      'none': {
+        name: 'None • Silent (Visual & Popup Only)',
+        description: 'Complete silence - only triggers desktop pop-up notification and screen alert',
+        category: 'silent'
+      },
+      // Modern & Melodic Tones
       'crystal-chime': {
         name: 'Crystal Singing Chime',
-        description: 'Gentle, meditative pentatonic chime'
+        description: 'Gentle, meditative pentatonic chime',
+        category: 'melodic'
       },
       'marimba-sunshine': {
         name: 'Marimba Sunshine',
-        description: 'Warm rhythmic acoustic wooden mallet notes'
-      },
-      'cosmic-radar': {
-        name: 'Cosmic Radar Pulse',
-        description: 'Sci-fi sonar ping with frequency sweep'
+        description: 'Warm rhythmic acoustic wooden mallet notes',
+        category: 'melodic'
       },
       'gentle-harp': {
         name: 'Soothing Acoustic Harp',
-        description: 'Calming ascending harp arpeggio'
-      },
-      'energetic-siren': {
-        name: 'Energetic Siren',
-        description: 'Rapid alternating pitch alert for deep sleepers'
+        description: 'Calming ascending harp arpeggio',
+        category: 'melodic'
       },
       'birds-chirping': {
         name: 'Forest Birdsong',
-        description: 'Natural procedural morning bird chirps'
+        description: 'Natural procedural morning bird chirps',
+        category: 'melodic'
+      },
+      // Standard / Alert Tones
+      'classic-bell': {
+        name: 'Classic Mechanical Bell',
+        description: 'Vibrant dual metallic bells with rapid strike vibration',
+        category: 'alert'
+      },
+      'digital-beep': {
+        name: 'Retro Digital Watch',
+        description: 'Iconic 4-beep digital watch cadence',
+        category: 'alert'
+      },
+      'cosmic-radar': {
+        name: 'Cosmic Radar Pulse',
+        description: 'Sci-fi sonar ping with frequency sweep',
+        category: 'alert'
+      },
+      'energetic-siren': {
+        name: 'Energetic Siren',
+        description: 'Rapid alternating pitch alert for deep sleepers',
+        category: 'alert'
       }
     };
   }
@@ -88,6 +130,15 @@ class ChronosAudioEngine {
    * Play a specific tone. If loop is true, repeats until stopped.
    */
   play(toneId, volume = null, loop = false) {
+    this.stop(); // Stop any active playback
+    this.isRinging = loop;
+    this.currentTone = toneId;
+
+    // Silent mode requires no audio synthesis
+    if (toneId === 'none') {
+      return;
+    }
+
     this.initContext();
     if (!this.ctx) return;
 
@@ -95,12 +146,8 @@ class ChronosAudioEngine {
       this.setVolume(volume);
     }
 
-    this.stop(); // Stop any active playback
-    this.isRinging = loop;
-    this.currentTone = toneId;
-
     const playCycle = () => {
-      if (!this.ctx) return;
+      if (!this.ctx || !this.isRinging) return;
       const cycleDuration = this._synthesizeTone(toneId);
 
       if (loop && this.isRinging) {
@@ -116,9 +163,21 @@ class ChronosAudioEngine {
   }
 
   /**
-   * Play a short preview of a tone (lasts ~2.5 - 3 seconds then stops).
+   * Play a short preview of a tone (lasts ~2.5 - 4 seconds then stops).
    */
   preview(toneId, volume = null, onComplete = null) {
+    this.stop();
+    this.currentTone = toneId;
+
+    if (toneId === 'none') {
+      // Visual feedback only for silent mode
+      this.previewTimer = setTimeout(() => {
+        this.stop();
+        if (typeof onComplete === 'function') onComplete();
+      }, 700);
+      return;
+    }
+
     this.initContext();
     if (!this.ctx) return;
 
@@ -126,11 +185,8 @@ class ChronosAudioEngine {
       this.setVolume(volume);
     }
 
-    this.stop();
-    this.currentTone = toneId;
-
     const duration = this._synthesizeTone(toneId);
-    const stopTimeMs = Math.min(3200, Math.max(2200, duration * 1000));
+    const stopTimeMs = Math.min(4500, Math.max(2200, duration * 1000));
 
     this.previewTimer = setTimeout(() => {
       this.stop();
@@ -176,6 +232,23 @@ class ChronosAudioEngine {
 
   _synthesizeTone(toneId) {
     switch (toneId) {
+      // Grandfather Clock Tones
+      case 'grandfather-westminster':
+        return this._playGrandfatherWestminster();
+      case 'grandfather-cathedral-gong':
+        return this._playGrandfatherCathedralGong();
+      case 'grandfather-whittington':
+        return this._playGrandfatherWhittington();
+      case 'grandfather-single-strike':
+        return this._playGrandfatherSingleStrike();
+      case 'grandfather-st-michael':
+        return this._playGrandfatherStMichael();
+
+      // Silent Mode
+      case 'none':
+        return this._playSilent();
+
+      // Standard / Melodic Tones
       case 'classic-bell':
         return this._playClassicBell();
       case 'digital-beep':
@@ -193,7 +266,7 @@ class ChronosAudioEngine {
       case 'birds-chirping':
         return this._playBirdsChirping();
       default:
-        return this._playCrystalChime();
+        return this._playGrandfatherWestminster();
     }
   }
 
@@ -496,6 +569,170 @@ class ChronosAudioEngine {
       this.activeNodes.push(osc, gain);
     });
 
+    return 2.0;
+  }
+
+  /* -------------------------------------------------------------
+     GRANDFATHER CLOCK ACOUSTIC SYNTHESIZERS
+     Physical acoustics modeling for tubular bells and bronze gongs
+     ------------------------------------------------------------- */
+
+  /**
+   * Generates a single acoustic chime note with authentic bell overtone partials:
+   * Prime (1.0x), Tierce (1.2x), Quint (1.5x), Nominal (2.0x), and mechanical hammer strike.
+   */
+  _createGrandfatherChimeNote(freq, startTime, duration = 3.5, vol = 0.45, isHeavyGong = false) {
+    if (!this.ctx) return;
+
+    // Harmonic partial ratios for cast bronze / tubular bell acoustics
+    const overtones = [
+      { ratio: 1.0, type: 'sine', decayMult: 1.0, volMult: 0.85 },
+      { ratio: 1.201, type: 'sine', decayMult: 0.88, volMult: 0.55 }, // Tierce (minor third)
+      { ratio: 1.498, type: 'sine', decayMult: 0.82, volMult: 0.45 }, // Quint (fifth)
+      { ratio: 2.0, type: 'sine', decayMult: 0.72, volMult: 0.38 },   // Nominal (octave)
+      { ratio: 2.76, type: 'sine', decayMult: 0.45, volMult: 0.22 }   // High chime shimmer
+    ];
+
+    if (isHeavyGong) {
+      // Add deep low hum tone and extra sub-harmonic body for cathedral gong
+      overtones.push({ ratio: 0.5, type: 'sine', decayMult: 1.3, volMult: 0.95 });
+      overtones.push({ ratio: 0.75, type: 'sine', decayMult: 1.15, volMult: 0.5 });
+    }
+
+    // Mechanical hammer transient (felt/brass clapper impulse)
+    const strikeOsc = this.ctx.createOscillator();
+    const strikeGain = this.ctx.createGain();
+    strikeOsc.type = 'triangle';
+    strikeOsc.frequency.setValueAtTime(freq * 3.6, startTime);
+    strikeGain.gain.setValueAtTime(0, startTime);
+    strikeGain.gain.linearRampToValueAtTime(vol * 0.35, startTime + 0.002);
+    strikeGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.05);
+
+    strikeOsc.connect(strikeGain);
+    strikeGain.connect(this.masterGain);
+    strikeOsc.start(startTime);
+    strikeOsc.stop(startTime + 0.06);
+    this.activeNodes.push(strikeOsc, strikeGain);
+
+    // Render acoustic bell overtones with subtle detuning for natural brass phasing
+    overtones.forEach((ot, i) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = ot.type;
+      osc.frequency.setValueAtTime(freq * ot.ratio, startTime);
+
+      // Micro-detuning creates warm acoustic chorus effect
+      const detune = (i % 2 === 0 ? 1 : -1) * (i * 1.6 + 1.2);
+      osc.detune.setValueAtTime(detune, startTime);
+
+      const noteDuration = duration * ot.decayMult;
+      const noteVol = vol * ot.volMult;
+
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(noteVol, startTime + 0.006);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + noteDuration);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(startTime);
+      osc.stop(startTime + noteDuration);
+      this.activeNodes.push(osc, gain);
+    });
+  }
+
+  /**
+   * 9. WESTMINSTER QUARTERS: Classic Grandfather Clock 4-bell melody + deep hour gong strike.
+   */
+  _playGrandfatherWestminster() {
+    const t0 = this.ctx.currentTime;
+    // Classic 4-note Westminster chime sequence: G#4, E4, F#4, B3
+    const notes = [
+      { freq: 415.30, time: 0.0, dur: 2.8, vol: 0.40 }, // G#4
+      { freq: 329.63, time: 0.75, dur: 2.8, vol: 0.40 }, // E4
+      { freq: 369.99, time: 1.50, dur: 2.8, vol: 0.40 }, // F#4
+      { freq: 246.94, time: 2.25, dur: 3.5, vol: 0.44 }  // B3
+    ];
+
+    notes.forEach(n => {
+      this._createGrandfatherChimeNote(n.freq, t0 + n.time, n.dur, n.vol, false);
+    });
+
+    // Deep hour gong strike following the chime
+    this._createGrandfatherChimeNote(164.81, t0 + 3.4, 4.2, 0.52, true); // E3 deep bronze gong
+
+    return 7.6; // Cycle duration in seconds
+  }
+
+  /**
+   * 10. DEEP CATHEDRAL GONG: Authoritative low bronze pendulum clock strikes with 4.5s decay.
+   */
+  _playGrandfatherCathedralGong() {
+    const t0 = this.ctx.currentTime;
+    // Deep bronze clock strike (C3 / 130.8 Hz)
+    this._createGrandfatherChimeNote(130.81, t0, 4.6, 0.58, true);
+    this._createGrandfatherChimeNote(130.81, t0 + 2.4, 4.8, 0.54, true);
+    return 6.5;
+  }
+
+  /**
+   * 11. WHITTINGTON CHIMES: Historic 8-bell cascading sequence from St. Mary-le-Bow.
+   */
+  _playGrandfatherWhittington() {
+    const t0 = this.ctx.currentTime;
+    // 8-bell melody: B4, A4, G#4, F#4, E4, D#4, C#4, B3
+    const notes = [
+      { freq: 493.88, time: 0.0, dur: 2.2, vol: 0.34 },
+      { freq: 440.00, time: 0.35, dur: 2.2, vol: 0.34 },
+      { freq: 415.30, time: 0.70, dur: 2.2, vol: 0.34 },
+      { freq: 369.99, time: 1.05, dur: 2.2, vol: 0.34 },
+      { freq: 329.63, time: 1.40, dur: 2.4, vol: 0.36 },
+      { freq: 311.13, time: 1.75, dur: 2.4, vol: 0.36 },
+      { freq: 277.18, time: 2.10, dur: 2.6, vol: 0.38 },
+      { freq: 246.94, time: 2.45, dur: 3.8, vol: 0.44 }
+    ];
+
+    notes.forEach(n => {
+      this._createGrandfatherChimeNote(n.freq, t0 + n.time, n.dur, n.vol, false);
+    });
+
+    return 6.2;
+  }
+
+  /**
+   * 12. EXECUTIVE SINGLE BELL: Discreet single bronze chime strike for board meetings.
+   */
+  _playGrandfatherSingleStrike() {
+    const t0 = this.ctx.currentTime;
+    // Single dignified bronze bell strike (E4 / 329.6 Hz)
+    this._createGrandfatherChimeNote(329.63, t0, 4.2, 0.48, false);
+    return 4.5;
+  }
+
+  /**
+   * 13. ST. MICHAEL CHIME: Traditional ornate 4-bell chime sequence.
+   */
+  _playGrandfatherStMichael() {
+    const t0 = this.ctx.currentTime;
+    const notes = [
+      { freq: 369.99, time: 0.0, dur: 2.6, vol: 0.36 }, // F#4
+      { freq: 493.88, time: 0.65, dur: 2.6, vol: 0.38 }, // B4
+      { freq: 415.30, time: 1.30, dur: 2.6, vol: 0.38 }, // G#4
+      { freq: 329.63, time: 1.95, dur: 3.8, vol: 0.44 }  // E4
+    ];
+
+    notes.forEach(n => {
+      this._createGrandfatherChimeNote(n.freq, t0 + n.time, n.dur, n.vol, false);
+    });
+
+    return 5.5;
+  }
+
+  /**
+   * 14. SILENT MODE: Zero sound output, visual and desktop popup alert only.
+   */
+  _playSilent() {
     return 2.0;
   }
 }

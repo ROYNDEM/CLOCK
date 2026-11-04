@@ -1,0 +1,17 @@
+{
+  "name": "Chronos • Dual Analog & Digital Clock",
+  "short_name": "Chronos",
+  "description": "Dual Analog and Digital Clock with Board Meeting Alarms and System Popups",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#0b0f19",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

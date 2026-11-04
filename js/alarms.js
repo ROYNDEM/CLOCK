@@ -23,11 +23,37 @@ class ChronosAlarmManager {
     this.ringingTitle = document.getElementById('ringingTitle');
     this.ringingLabel = document.getElementById('ringingLabel');
     this.ringingToneName = document.getElementById('ringingToneName');
+    this.ringingMemoBox = document.getElementById('ringingMemoBox');
+    this.ringingMemoText = document.getElementById('ringingMemoText');
     this.snoozeAlarmBtn = document.getElementById('snoozeAlarmBtn');
     this.snoozeBtnLabel = document.getElementById('snoozeBtnLabel');
-    this.dismissAlarmBtn = document.getElementById('dismissAlarmBtn');
+    // Custom Alarm Notification Popup Elements
+    this.customAlarmPopup = document.getElementById('customAlarmPopup');
+    this.customPopupHeader = document.getElementById('customPopupHeader');
+    this.customPopupTime = document.getElementById('customPopupTime');
+    this.customPopupLabel = document.getElementById('customPopupLabel');
+    this.customPopupToneTag = document.getElementById('customPopupToneTag');
+    this.customPopupToneName = document.getElementById('customPopupToneName');
+    this.customPopupMemoBox = document.getElementById('customPopupMemoBox');
+    this.customPopupMemoText = document.getElementById('customPopupMemoText');
+    this.customPopupSnoozeBtn = document.getElementById('customPopupSnoozeBtn');
+    this.customPopupSnoozeLabel = document.getElementById('customPopupSnoozeLabel');
+    this.customPopupDismissBtn = document.getElementById('customPopupDismissBtn');
+    this.customPopupCloseBtn = document.getElementById('customPopupCloseBtn');
+
+    // Background Worker and Title Flasher
+    this.worker = null;
+    this.isWorkerActive = false;
+    this.originalTitle = document.title;
+    this.titleFlashTimer = null;
+
+    // Cross-window and popup communication channel
+    this.broadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('chronos_alarm_channel') : null;
+    this.activeCustomPopupAlarm = null;
 
     this.initEventListeners();
+    this.initCustomAlarmPopup();
+    this.initBackgroundWorker();
     this.render();
     this.startChecker();
   }
@@ -46,11 +72,12 @@ class ChronosAlarmManager {
     return [
       {
         id: 'alarm_default_1',
-        time: '07:30',
-        label: 'Morning Awakening',
-        tone: 'crystal-chime',
+        time: '14:30',
+        label: 'Board Meeting: Strategy Review',
+        message: 'Agenda Item 2: Financial Forecast Discussion (5-min warning)',
+        tone: 'grandfather-westminster',
         volume: 85,
-        snoozeMinutes: 10,
+        snoozeMinutes: 5,
         repeatDays: [1, 2, 3, 4, 5], // Weekdays
         enabled: true,
         snoozeUntil: null,
@@ -59,11 +86,12 @@ class ChronosAlarmManager {
       {
         id: 'alarm_default_2',
         time: '18:00',
-        label: 'Evening Workout',
-        tone: 'marimba-sunshine',
-        volume: 80,
+        label: 'Executive Session Wrap-Up',
+        message: 'Adjourn meeting & confirm next committee action items',
+        tone: 'grandfather-single-strike',
+        volume: 75,
         snoozeMinutes: 5,
-        repeatDays: [1, 2, 3, 4, 5, 6, 0], // Daily
+        repeatDays: [1, 2, 3, 4, 5],
         enabled: false,
         snoozeUntil: null,
         lastTriggered: null
@@ -108,10 +136,82 @@ class ChronosAlarmManager {
     window.addEventListener('chronos:formatchanged', () => {
       this.render();
     });
+
+    // Listen for actions from Desktop App (Tray or Floating Alert window)
+    if (window.chronosDesktop && typeof window.chronosDesktop.onAlarmAction === 'function') {
+      window.chronosDesktop.onAlarmAction((action) => {
+        if (action === 'snooze') {
+          this.snoozeCurrentAlarm();
+        } else if (action === 'dismiss') {
+          this.dismissCurrentAlarm();
+        }
+      });
+    }
+
+    // Window focus & tab visibility change handlers to ensure instant alarm trigger
+    document.addEventListener('visibilitychange', () => {
+      this.checkAlarms();
+      this.updateNextAlarmCountdown();
+    });
+    window.addEventListener('focus', () => {
+      this.checkAlarms();
+      this.updateNextAlarmCountdown();
+    });
+  }
+
+  /**
+   * Initializes a dedicated background Web Worker timer.
+   * Web Workers run in a separate OS thread and are NOT throttled or suspended
+   * when the browser tab is minimized or hidden on another screen during meetings.
+   */
+  initBackgroundWorker() {
+    try {
+      const workerScript = `
+        let intervalId = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (!intervalId) {
+              intervalId = setInterval(function() {
+                self.postMessage('tick');
+              }, 500); // 500ms high-precision background pulse
+            }
+          } else if (e.data === 'stop') {
+            if (intervalId) {
+              clearInterval(intervalId);
+              intervalId = null;
+            }
+          }
+        };
+      `;
+      const blob = new Blob([workerScript], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      this.worker = new Worker(workerUrl);
+
+      this.worker.onmessage = (e) => {
+        if (e.data === 'tick') {
+          this.checkAlarms();
+          this.updateNextAlarmCountdown();
+        }
+      };
+
+      this.worker.postMessage('start');
+      this.isWorkerActive = true;
+
+      // Update worker indicator if present
+      const workerChip = document.getElementById('workerStatusChip');
+      if (workerChip) {
+        workerChip.classList.add('active');
+        workerChip.innerHTML = '<span class="pulse-dot"></span> Background Engine: Active';
+      }
+    } catch (err) {
+      console.warn('Background worker fallback to standard window timer', err);
+      this.isWorkerActive = false;
+    }
   }
 
   startChecker() {
     this.checkAlarms();
+    // Fallback interval in case Web Workers are restricted in any environment
     this.checkIntervalId = setInterval(() => {
       this.checkAlarms();
       this.updateNextAlarmCountdown();
@@ -161,14 +261,17 @@ class ChronosAlarmManager {
   }
 
   /**
-   * Fires the alarm: opens modal, loops tone, vibrates, triggers system notification.
+   * Fires the alarm: opens modal, loops tone (if not silent), vibrates,
+   * triggers OS desktop notification with custom message, and flashes the tab title.
    */
   triggerAlarm(alarm) {
     this.activeRingingAlarm = alarm;
 
-    // 1. Play Synthesized Tone in loop
+    // 1. Play Synthesized Tone in loop (unless user selected 'none')
     if (window.chronosAudio) {
-      window.chronosAudio.play(alarm.tone, alarm.volume, true);
+      if (alarm.tone !== 'none') {
+        window.chronosAudio.play(alarm.tone, alarm.volume, true);
+      }
     }
 
     // 2. Physical device vibration if supported
@@ -176,22 +279,50 @@ class ChronosAlarmManager {
       navigator.vibrate([400, 200, 400, 200, 600]);
     }
 
-    // 3. System Notification if granted
-    this.sendNotification(alarm);
+    // 3. Custom Chronos Alarm Popup Notification (displays directly from Chronos, not Chrome)
+    this.showCustomAlarmPopup(alarm);
 
-    // 4. Update Ringing Dialog UI
+    // 3b. Real OS Desktop Popup via Electron (displays over any screen, app or game)
+    if (window.chronosDesktop && window.chronosDesktop.isDesktop) {
+      window.chronosDesktop.triggerAlarm({
+        id: alarm.id,
+        time: this.formatTimeDisplay(alarm.time),
+        label: alarm.label || 'Meeting Alert',
+        message: alarm.message || '',
+        snoozeMinutes: alarm.snoozeMinutes || 10
+      });
+    }
+
+    // 4. Flash Tab Title so background tab is immediately noticeable
+    this.startTitleFlashing(alarm);
+
+    // 5. Update Ringing Dialog UI
     if (this.ringingTitle) {
       this.ringingTitle.textContent = this.formatTimeDisplay(alarm.time);
     }
     if (this.ringingLabel) {
-      this.ringingLabel.textContent = alarm.label || 'Alarm Alert';
+      this.ringingLabel.textContent = alarm.label || 'Meeting Alert';
     }
     if (this.ringingToneName && window.chronosAudio) {
-      const toneMeta = window.chronosAudio.tones[alarm.tone];
-      this.ringingToneName.textContent = toneMeta ? toneMeta.name : alarm.tone;
+      if (alarm.tone === 'none') {
+        this.ringingToneName.textContent = '🔕 Silent Alert (Desktop Popup & Visual Only)';
+      } else {
+        const toneMeta = window.chronosAudio.tones[alarm.tone];
+        this.ringingToneName.textContent = toneMeta ? toneMeta.name : alarm.tone;
+      }
     }
     if (this.snoozeBtnLabel) {
       this.snoozeBtnLabel.textContent = `Snooze (${alarm.snoozeMinutes || 10}m)`;
+    }
+
+    // Optional Meeting Note / Agenda Memo in Ringing Card
+    if (this.ringingMemoBox && this.ringingMemoText) {
+      if (alarm.message && alarm.message.trim()) {
+        this.ringingMemoText.textContent = alarm.message.trim();
+        this.ringingMemoBox.classList.remove('hidden');
+      } else {
+        this.ringingMemoBox.classList.add('hidden');
+      }
     }
 
     if (this.ringingModal) {
@@ -202,6 +333,11 @@ class ChronosAlarmManager {
       } catch (e) {
         this.ringingModal.setAttribute('open', '');
       }
+    }
+
+    // 6. Update Always-On-Top Floating Window if open
+    if (window.chronosApp && typeof window.chronosApp.updatePiP === 'function') {
+      window.chronosApp.updatePiP();
     }
   }
 
@@ -228,6 +364,10 @@ class ChronosAlarmManager {
     if (window.chronosAudio) {
       window.chronosAudio.stop();
     }
+    this.stopTitleFlashing();
+    if (this.ringingMemoBox) {
+      this.ringingMemoBox.classList.add('hidden');
+    }
     if (this.ringingModal) {
       try {
         this.ringingModal.close();
@@ -236,20 +376,325 @@ class ChronosAlarmManager {
       }
     }
     this.activeRingingAlarm = null;
+
+    // Hide Custom Alarm Notification Popup
+    this.hideCustomAlarmPopup();
+
+    // Signal desktop app to close floating alert & reset always-on-top
+    if (window.chronosDesktop && window.chronosDesktop.isDesktop) {
+      window.chronosDesktop.stopAlarm();
+    }
+
+    // Update Always-On-Top Floating Window
+    if (window.chronosApp && typeof window.chronosApp.updatePiP === 'function') {
+      window.chronosApp.updatePiP();
+    }
   }
 
-  sendNotification(alarm) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(`⏰ CHRONOS ALARM: ${alarm.label || 'Wake Up!'}`, {
-          body: `It is now ${this.formatTimeDisplay(alarm.time)}. Click to view alarm.`,
-          icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><circle cx="12" cy="12" r="10"/></svg>',
-          tag: 'chronos-alarm'
-        });
-      } catch (e) {
-        console.warn('Notification could not be dispatched', e);
+  startTitleFlashing(alarm) {
+    this.stopTitleFlashing();
+    let isAlert = true;
+    const timeFormatted = this.formatTimeDisplay(alarm.time);
+    const alertMsg = `🔔 [ALERT] ${alarm.label || 'Meeting'}!`;
+    const altMsg = `⏰ ${timeFormatted} • CHRONOS`;
+
+    this.titleFlashTimer = setInterval(() => {
+      document.title = isAlert ? alertMsg : altMsg;
+      isAlert = !isAlert;
+    }, 900);
+  }
+
+  stopTitleFlashing() {
+    if (this.titleFlashTimer) {
+      clearInterval(this.titleFlashTimer);
+      this.titleFlashTimer = null;
+    }
+    document.title = this.originalTitle || 'Chronos • Dual Analog & Digital Clock with Smart Alarms';
+  }
+
+  /* -------------------------------------------------------------
+     CUSTOM CHRONOS ALARM POPUP NOTIFICATION CONTROLS
+     Replaces generic Chrome browser notifications with rich Chronos popup
+     ------------------------------------------------------------- */
+  initCustomAlarmPopup() {
+    if (!this.customAlarmPopup) return;
+
+    if (this.customPopupSnoozeBtn) {
+      this.customPopupSnoozeBtn.addEventListener('click', () => {
+        if (this.activeCustomPopupAlarm && this.activeCustomPopupAlarm.isTest) {
+          this.hideCustomAlarmPopup();
+          if (window.chronosApp) {
+            window.chronosApp.showQuickToast('💤 Test alert snoozed');
+          }
+        } else {
+          this.snoozeCurrentAlarm();
+        }
+      });
+    }
+
+    if (this.customPopupDismissBtn) {
+      this.customPopupDismissBtn.addEventListener('click', () => {
+        if (this.activeCustomPopupAlarm && this.activeCustomPopupAlarm.isTest) {
+          this.hideCustomAlarmPopup();
+          if (window.chronosApp) {
+            window.chronosApp.showQuickToast('⏹️ Test alert dismissed');
+          }
+        } else {
+          this.dismissCurrentAlarm();
+        }
+      });
+    }
+
+    if (this.customPopupCloseBtn) {
+      this.customPopupCloseBtn.addEventListener('click', () => {
+        if (this.activeCustomPopupAlarm && this.activeCustomPopupAlarm.isTest) {
+          this.hideCustomAlarmPopup();
+        } else {
+          this.dismissCurrentAlarm();
+        }
+      });
+    }
+
+    // Drag header to reposition popup freely across screen
+    if (this.customPopupHeader) {
+      let isDragging = false;
+      let startX = 0;
+      let startY = 0;
+      let initialLeft = 0;
+      let initialTop = 0;
+
+      this.customPopupHeader.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+
+        const rect = this.customAlarmPopup.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+
+        this.customAlarmPopup.style.right = 'auto';
+        this.customAlarmPopup.style.left = `${initialLeft}px`;
+        this.customAlarmPopup.style.top = `${initialTop}px`;
+        this.customAlarmPopup.style.transition = 'none';
+
+        const onMouseMove = (moveEvt) => {
+          if (!isDragging) return;
+          const deltaX = moveEvt.clientX - startX;
+          const deltaY = moveEvt.clientY - startY;
+
+          const newLeft = Math.max(10, Math.min(window.innerWidth - rect.width - 10, initialLeft + deltaX));
+          const newTop = Math.max(10, Math.min(window.innerHeight - rect.height - 10, initialTop + deltaY));
+
+          this.customAlarmPopup.style.left = `${newLeft}px`;
+          this.customAlarmPopup.style.top = `${newTop}px`;
+        };
+
+        const onMouseUp = () => {
+          isDragging = false;
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          this.customAlarmPopup.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
+    // Cross-tab / external alert popup sync
+    if (this.broadcastChannel) {
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data && event.data.type === 'alert:action') {
+          if (event.data.action === 'snooze') {
+            this.snoozeCurrentAlarm();
+          } else if (event.data.action === 'dismiss') {
+            this.dismissCurrentAlarm();
+          }
+        }
+      };
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'chronos:alert:action') {
+        if (event.data.action === 'snooze') {
+          this.snoozeCurrentAlarm();
+        } else if (event.data.action === 'dismiss') {
+          this.dismissCurrentAlarm();
+        }
+      }
+    });
+
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'chronos_last_action' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && parsed.action && Date.now() - parsed.timestamp < 3000) {
+            if (parsed.action === 'snooze') this.snoozeCurrentAlarm();
+            else if (parsed.action === 'dismiss') this.dismissCurrentAlarm();
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  /**
+   * Displays Chronos's custom alarm notification popup on screen.
+   */
+  showCustomAlarmPopup(alarm) {
+    if (!this.customAlarmPopup) return;
+
+    this.activeCustomPopupAlarm = alarm;
+
+    if (this.customPopupTime) {
+      this.customPopupTime.textContent = this.formatTimeDisplay(alarm.time);
+    }
+    if (this.customPopupLabel) {
+      this.customPopupLabel.textContent = alarm.label || 'Meeting Alert';
+    }
+    if (this.customPopupToneName) {
+      if (alarm.tone === 'none') {
+        this.customPopupToneName.textContent = 'Silent Alert';
+      } else if (window.chronosAudio && window.chronosAudio.tones[alarm.tone]) {
+        this.customPopupToneName.textContent = window.chronosAudio.tones[alarm.tone].name;
+      } else {
+        this.customPopupToneName.textContent = alarm.tone || 'Chime';
       }
     }
+    if (this.customPopupSnoozeLabel) {
+      this.customPopupSnoozeLabel.textContent = `Snooze (${alarm.snoozeMinutes || 10}m)`;
+    }
+
+    if (this.customPopupMemoBox && this.customPopupMemoText) {
+      if (alarm.message && alarm.message.trim()) {
+        this.customPopupMemoText.textContent = alarm.message.trim();
+        this.customPopupMemoBox.classList.remove('hidden');
+      } else {
+        this.customPopupMemoBox.classList.add('hidden');
+      }
+    }
+
+    this.customAlarmPopup.classList.remove('hidden');
+
+    // Broadcast data to any open floating alert window or child tab
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          type: 'alert:data',
+          data: {
+            time: this.formatTimeDisplay(alarm.time),
+            label: alarm.label || 'Meeting Alert',
+            message: alarm.message || '',
+            snoozeMinutes: alarm.snoozeMinutes || 10
+          }
+        });
+      } catch (_) {}
+    }
+  }
+
+  /**
+   * Hides the custom alarm notification popup.
+   */
+  hideCustomAlarmPopup() {
+    if (this.customAlarmPopup) {
+      this.customAlarmPopup.classList.add('hidden');
+    }
+    this.activeCustomPopupAlarm = null;
+
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({ type: 'alert:dismiss' });
+      } catch (_) {}
+    }
+  }
+
+  /**
+   * Dispatches alarm notification: displays custom Chronos popup (avoids Chrome notifications).
+   */
+  sendNotification(alarm) {
+    // 1. Show Chronos custom alarm notification popup
+    this.showCustomAlarmPopup(alarm);
+
+    // 2. Only if the user explicitly opted into Chrome native notifications in settings, dispatch window notification
+    const useSystemNotif = localStorage.getItem('chronos_use_system_notification') === 'true';
+    if (useSystemNotif && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const timeFormatted = this.formatTimeDisplay(alarm.time);
+        const title = `⏰ ALARM! ${alarm.label || "Time's up!"} (${timeFormatted})`;
+
+        let bodyText = alarm.message && alarm.message.trim() 
+          ? `${alarm.message.trim()}\nTime's up! (${timeFormatted})` 
+          : `Time's up! (${timeFormatted}) • Chronos`;
+
+        const notifOptions = {
+          body: bodyText,
+          icon: 'clock.png',
+          badge: 'clock.png',
+          tag: `chronos-alarm-${alarm.id || Date.now()}`,
+          requireInteraction: true,
+          silent: alarm.tone === 'none'
+        };
+
+        this.dispatchWindowNotification(title, notifOptions);
+      } catch (e) {
+        console.warn('System Notification fallback error', e);
+      }
+    }
+  }
+
+  dispatchWindowNotification(title, options) {
+    try {
+      const notif = new Notification(title, options);
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+      };
+    } catch (err) {
+      console.warn('Window Notification fallback error', err);
+    }
+  }
+
+  /**
+   * Sends an immediate test alarm popup notification:
+   * Displays the custom Chronos notification popup right on screen with acoustic sound!
+   */
+  sendTestNotification(customMessage = null) {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const testTime = this.formatTimeDisplay(`${h}:${m}`);
+
+    const testAlarm = {
+      id: 'test_custom_popup_' + Date.now(),
+      time: `${h}:${m}`,
+      label: 'Board Meeting Test Alert',
+      message: customMessage || 'Item 3: Executive Committee Presentation • Custom alarm notification test',
+      tone: 'grandfather-single-strike',
+      volume: 80,
+      snoozeMinutes: 5,
+      isTest: true
+    };
+
+    // 1. Show the Custom Chronos Alarm Notification Popup directly on screen!
+    this.showCustomAlarmPopup(testAlarm);
+
+    // 2. Play acoustic tone preview
+    if (window.chronosAudio) {
+      window.chronosAudio.preview('grandfather-single-strike', 80);
+    }
+
+    // 3. Real OS Desktop Popup via Electron if running Desktop App
+    if (window.chronosDesktop && window.chronosDesktop.isDesktop) {
+      window.chronosDesktop.testNotification({
+        id: testAlarm.id,
+        time: testTime,
+        label: testAlarm.label,
+        message: testAlarm.message,
+        snoozeMinutes: testAlarm.snoozeMinutes
+      });
+    }
+
+    return true;
   }
 
   /**
@@ -284,8 +729,9 @@ class ChronosAlarmManager {
         id: `alarm_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         time: alarmData.time,
         label: alarmData.label || 'Alarm',
-        tone: alarmData.tone || 'crystal-chime',
-        volume: alarmData.volume || 80,
+        message: alarmData.message || '',
+        tone: alarmData.tone || 'grandfather-westminster',
+        volume: alarmData.volume !== undefined ? alarmData.volume : 80,
         snoozeMinutes: Number(alarmData.snoozeMinutes) || 10,
         repeatDays: alarmData.repeatDays || [],
         enabled: true,
@@ -313,9 +759,9 @@ class ChronosAlarmManager {
   }
 
   /**
-   * Quick Nap preset: sets an alarm for `N` minutes from now.
+   * Quick Alarm preset: sets an alarm for `N` minutes from now with optional label/message/tone.
    */
-  addQuickAlarm(minutes) {
+  addQuickAlarm(minutes, label = null, message = null, tone = null) {
     const now = new Date();
     now.setMinutes(now.getMinutes() + minutes);
 
@@ -324,9 +770,10 @@ class ChronosAlarmManager {
 
     this.saveAlarmItem({
       time: `${h}:${m}`,
-      label: `Quick ${minutes}m Nap`,
-      tone: 'marimba-sunshine',
-      volume: 85,
+      label: label || `Quick ${minutes}m Meeting Alert`,
+      message: message || `Meeting Agenda checkpoint • ${minutes}m reminder`,
+      tone: tone || 'grandfather-single-strike',
+      volume: 80,
       snoozeMinutes: 5,
       repeatDays: [], // Once
       enabled: true
@@ -506,16 +953,13 @@ class ChronosAlarmManager {
 
         <div class="alarm-card-mid">
           <span class="alarm-card-label">${this.escapeHtml(alarm.label || 'Alarm')}</span>
+          ${alarm.message ? `<div class="alarm-card-memo"><span class="memo-icon">📝</span> <span>${this.escapeHtml(alarm.message)}</span></div>` : ''}
           <div class="alarm-card-tags">
             <span class="alarm-tag">${repeatStr}</span>
-            <span class="alarm-tag tag-sound">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-              </svg>
-              ${toneName}
+            <span class="alarm-tag tag-sound ${alarm.tone === 'none' ? 'tag-silent' : (alarm.tone.startsWith('grandfather-') ? 'tag-grandfather' : '')}">
+              ${alarm.tone === 'none' ? '🔕 Silent' : (alarm.tone.startsWith('grandfather-') ? '🕰️ ' + toneName : `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg> ${toneName}`)}
             </span>
-            <span class="alarm-tag">Vol: ${alarm.volume || 80}%</span>
+            ${alarm.tone !== 'none' ? `<span class="alarm-tag">Vol: ${alarm.volume || 80}%</span>` : ''}
           </div>
         </div>
 
