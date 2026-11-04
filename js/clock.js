@@ -1,6 +1,7 @@
 /**
  * CHRONOS CLOCK CONTROLLER
  * High-precision dual Analog and Digital clock updater with smooth 60FPS sweeping second hand.
+ * Directly synchronized to the operating system's local wall clock.
  */
 
 class ChronosClock {
@@ -30,6 +31,7 @@ class ChronosClock {
 
     this.initTicks();
     this.initFormatToggle();
+    this.initSystemTimeSync();
     this.startLoop();
   }
 
@@ -88,16 +90,49 @@ class ChronosClock {
   }
 
   /**
+   * System Clock Synchronization:
+   * Ensures the display is 100% synchronized with the PC system clock at all times,
+   * including across sleep/hibernation, tab switching, and OS time/timezone adjustments.
+   */
+  initSystemTimeSync() {
+    // Immediate initial sync
+    this.tick();
+
+    // Re-sync immediately when returning from sleep, minimizing, or switching apps
+    document.addEventListener('visibilitychange', () => {
+      this.tick();
+    });
+
+    window.addEventListener('focus', () => {
+      this.tick();
+    });
+
+    window.addEventListener('pageshow', () => {
+      this.tick();
+    });
+
+    // Background interval fallback:
+    // Guarantees continuous OS clock reading even if requestAnimationFrame is throttled
+    setInterval(() => {
+      this.tick();
+    }, 500);
+  }
+
+  tick() {
+    const now = new Date(); // Queries live operating system clock
+    this.renderAnalog(now);
+    this.renderDigital(now);
+  }
+
+  /**
    * Main 60FPS animation loop for ultra-smooth fluid sweeps.
    */
   startLoop() {
-    const tick = () => {
-      const now = new Date();
-      this.renderAnalog(now);
-      this.renderDigital(now);
-      this.animationFrameId = requestAnimationFrame(tick);
+    const loop = () => {
+      this.tick();
+      this.animationFrameId = requestAnimationFrame(loop);
     };
-    this.animationFrameId = requestAnimationFrame(tick);
+    this.animationFrameId = requestAnimationFrame(loop);
   }
 
   renderAnalog(now) {

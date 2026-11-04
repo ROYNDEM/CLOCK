@@ -289,7 +289,10 @@ class ChronosAlarmManager {
         time: this.formatTimeDisplay(alarm.time),
         label: alarm.label || 'Meeting Alert',
         message: alarm.message || '',
-        snoozeMinutes: alarm.snoozeMinutes || 10
+        snoozeMinutes: alarm.snoozeMinutes || 10,
+        tone: alarm.tone || 'grandfather-westminster',
+        autoDismissSeconds: alarm.autoDismissSeconds !== undefined ? Number(alarm.autoDismissSeconds) : 10,
+        isBlinking: alarm.tone === 'none' || Boolean(alarm.isBlinking)
       });
     }
 
@@ -361,6 +364,7 @@ class ChronosAlarmManager {
   }
 
   stopRinging() {
+    this.clearCustomPopupAutoClose();
     if (window.chronosAudio) {
       window.chronosAudio.stop();
     }
@@ -576,6 +580,50 @@ class ChronosAlarmManager {
 
     this.customAlarmPopup.classList.remove('hidden');
 
+    // Blinking mode check (discreet meeting pulse)
+    const isBlinking = Boolean(alarm.isBlinking || alarm.tone === 'none');
+    if (isBlinking) {
+      this.customAlarmPopup.classList.add('is-blinking');
+    } else {
+      this.customAlarmPopup.classList.remove('is-blinking');
+    }
+
+    // Auto-dismiss countdown timer (avoids meeting distraction)
+    this.clearCustomPopupAutoClose();
+    const autoSec = alarm.autoDismissSeconds !== undefined ? Number(alarm.autoDismissSeconds) : 10;
+    if (autoSec > 0) {
+      const badge = document.getElementById('customPopupAutoCloseBadge');
+      const barWrap = document.getElementById('customPopupBarWrap');
+      const barFill = document.getElementById('customPopupBarFill');
+
+      if (badge) {
+        badge.classList.remove('hidden');
+        badge.textContent = `Auto-close: ${autoSec}s`;
+      }
+      if (barWrap) barWrap.classList.remove('hidden');
+
+      const startTime = Date.now();
+      const totalMs = autoSec * 1000;
+
+      this.customPopupAutoInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const remainingMs = Math.max(0, totalMs - elapsed);
+        const remSec = Math.ceil(remainingMs / 1000);
+        if (badge) badge.textContent = `Auto-close: ${remSec}s`;
+        if (barFill) barFill.style.width = `${Math.max(0, (remainingMs / totalMs) * 100)}%`;
+
+        if (remainingMs <= 0) {
+          this.clearCustomPopupAutoClose();
+          this.dismissCurrentAlarm();
+        }
+      }, 100);
+
+      this.customPopupAutoTimer = setTimeout(() => {
+        this.clearCustomPopupAutoClose();
+        this.dismissCurrentAlarm();
+      }, totalMs);
+    }
+
     // Broadcast data to any open floating alert window or child tab
     if (this.broadcastChannel) {
       try {
@@ -585,7 +633,10 @@ class ChronosAlarmManager {
             time: this.formatTimeDisplay(alarm.time),
             label: alarm.label || 'Meeting Alert',
             message: alarm.message || '',
-            snoozeMinutes: alarm.snoozeMinutes || 10
+            snoozeMinutes: alarm.snoozeMinutes || 10,
+            tone: alarm.tone || 'grandfather-westminster',
+            autoDismissSeconds: autoSec,
+            isBlinking: isBlinking
           }
         });
       } catch (_) {}
@@ -595,7 +646,25 @@ class ChronosAlarmManager {
   /**
    * Hides the custom alarm notification popup.
    */
+  
+  clearCustomPopupAutoClose() {
+    if (this.customPopupAutoTimer) {
+      clearTimeout(this.customPopupAutoTimer);
+      this.customPopupAutoTimer = null;
+    }
+    if (this.customPopupAutoInterval) {
+      clearInterval(this.customPopupAutoInterval);
+      this.customPopupAutoInterval = null;
+    }
+    const badge = document.getElementById('customPopupAutoCloseBadge');
+    const barWrap = document.getElementById('customPopupBarWrap');
+    if (badge) badge.classList.add('hidden');
+    if (barWrap) barWrap.classList.add('hidden');
+  }
+
   hideCustomAlarmPopup() {
+    this.clearCustomPopupAutoClose();
+    if (this.customAlarmPopup) this.customAlarmPopup.classList.remove('is-blinking');
     if (this.customAlarmPopup) {
       this.customAlarmPopup.classList.add('hidden');
     }
@@ -672,7 +741,9 @@ class ChronosAlarmManager {
       tone: 'grandfather-single-strike',
       volume: 80,
       snoozeMinutes: 5,
-      isTest: true
+      isTest: true,
+      autoDismissSeconds: 10,
+      isBlinking: false
     };
 
     // 1. Show the Custom Chronos Alarm Notification Popup directly on screen!
@@ -690,7 +761,10 @@ class ChronosAlarmManager {
         time: testTime,
         label: testAlarm.label,
         message: testAlarm.message,
-        snoozeMinutes: testAlarm.snoozeMinutes
+        snoozeMinutes: testAlarm.snoozeMinutes,
+        tone: testAlarm.tone,
+        autoDismissSeconds: 10,
+        isBlinking: testAlarm.tone === 'none'
       });
     }
 
@@ -722,7 +796,12 @@ class ChronosAlarmManager {
     if (alarmData.id) {
       const idx = this.alarms.findIndex(a => a.id === alarmData.id);
       if (idx !== -1) {
-        this.alarms[idx] = { ...this.alarms[idx], ...alarmData };
+        this.alarms[idx] = {
+        ...this.alarms[idx],
+        ...alarmData,
+        autoDismissSeconds: alarmData.autoDismissSeconds !== undefined ? Number(alarmData.autoDismissSeconds) : (this.alarms[idx].autoDismissSeconds !== undefined ? this.alarms[idx].autoDismissSeconds : 10),
+        isBlinking: alarmData.tone === 'none' || Boolean(alarmData.isBlinking)
+      };
       }
     } else {
       const newAlarm = {
@@ -733,6 +812,8 @@ class ChronosAlarmManager {
         tone: alarmData.tone || 'grandfather-westminster',
         volume: alarmData.volume !== undefined ? alarmData.volume : 80,
         snoozeMinutes: Number(alarmData.snoozeMinutes) || 10,
+        autoDismissSeconds: alarmData.autoDismissSeconds !== undefined ? Number(alarmData.autoDismissSeconds) : 10,
+        isBlinking: alarmData.tone === 'none' || Boolean(alarmData.isBlinking),
         repeatDays: alarmData.repeatDays || [],
         enabled: true,
         snoozeUntil: null,
@@ -959,6 +1040,8 @@ class ChronosAlarmManager {
             <span class="alarm-tag tag-sound ${alarm.tone === 'none' ? 'tag-silent' : (alarm.tone.startsWith('grandfather-') ? 'tag-grandfather' : '')}">
               ${alarm.tone === 'none' ? '🔕 Silent' : (alarm.tone.startsWith('grandfather-') ? '🕰️ ' + toneName : `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg> ${toneName}`)}
             </span>
+            ${alarm.tone === 'none' ? '<span class="alarm-tag tag-blinking">⚡ Blinking</span>' : ''}
+            ${alarm.autoDismissSeconds > 0 ? `<span class="alarm-tag tag-autodismiss">⏳ Auto-close: ${alarm.autoDismissSeconds}s</span>` : '<span class="alarm-tag">📌 Stay open</span>'}
             ${alarm.tone !== 'none' ? `<span class="alarm-tag">Vol: ${alarm.volume || 80}%</span>` : ''}
           </div>
         </div>

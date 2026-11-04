@@ -2350,3 +2350,129 @@ kbd {
   }
 }
 
+
+/* ==========================================================================
+   MEETING ALERT STYLES (Blinking Popup & Auto-Dismiss Settings)
+   ========================================================================== */
+.alert-style-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.alert-style-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.alert-style-chip:hover {
+  border-color: var(--accent-secondary);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.alert-style-chip.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-secondary);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+}
+
+.alert-style-chip.active[data-style="blinking"] {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: #fbbf24;
+  color: #fef08a;
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.3);
+}
+
+.badge-hint {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* Discreet Blinking Mode for In-Page Popup */
+.custom-alarm-popup.is-blinking {
+  animation: customDiscreetBlink 1.2s infinite ease-in-out !important;
+}
+
+@keyframes customDiscreetBlink {
+  0%, 100% {
+    border-color: #38bdf8;
+    box-shadow: 0 16px 45px rgba(0, 0, 0, 0.88), 0 0 20px rgba(56, 189, 248, 0.45);
+    background: rgba(11, 15, 25, 0.96);
+  }
+  50% {
+    border-color: #fbbf24;
+    box-shadow: 0 16px 45px rgba(0, 0, 0, 0.92), 0 0 35px rgba(251, 191, 36, 0.65);
+    background: rgba(26, 20, 10, 0.96);
+  }
+}
+
+.custom-popup-autoclose-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  white-space: nowrap;
+}
+
+.custom-popup-autoclose-tag.hidden {
+  display: none !important;
+}
+
+.custom-popup-bar-wrap {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.custom-popup-bar-wrap.hidden {
+  display: none !important;
+}
+
+.custom-popup-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #38bdf8, #fbbf24);
+  transition: width 0.1s linear;
+}
+
+/* Alarm List Tags */
+.alarm-tag.tag-blinking {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.alarm-tag.tag-autodismiss {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.tone-section-muted {
+  opacity: 0.6;
+}

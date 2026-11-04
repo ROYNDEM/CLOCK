@@ -25,6 +25,10 @@ class ChronosApp {
     this.alarmLabelInput = document.getElementById('alarmLabelInput');
     this.alarmMessageInput = document.getElementById('alarmMessageInput');
     this.alarmToneSelect = document.getElementById('alarmToneSelect');
+    this.alarmAutoDismissSelect = document.getElementById('alarmAutoDismissSelect');
+    this.alertStyleToneBtn = document.getElementById('alertStyleToneBtn');
+    this.alertStyleBlinkBtn = document.getElementById('alertStyleBlinkBtn');
+    this.toneSectionWrapper = document.getElementById('toneSectionWrapper');
     this.previewToneBtn = document.getElementById('previewToneBtn');
     this.previewPlayIcon = document.getElementById('previewPlayIcon');
     this.previewToneLabel = document.getElementById('previewToneLabel');
@@ -710,6 +714,17 @@ class ChronosApp {
       });
     }
 
+    if (this.alertStyleToneBtn) {
+      this.alertStyleToneBtn.addEventListener('click', () => {
+        this.setAlertStyle('tone');
+      });
+    }
+    if (this.alertStyleBlinkBtn) {
+      this.alertStyleBlinkBtn.addEventListener('click', () => {
+        this.setAlertStyle('blinking');
+      });
+    }
+
     // Tone preview button
     if (this.previewToneBtn) {
       this.previewToneBtn.addEventListener('click', () => {
@@ -746,8 +761,30 @@ class ChronosApp {
     }
   }
 
+  
+  setAlertStyle(style) {
+    const isBlinking = style === 'blinking';
+    if (this.alertStyleBlinkBtn) this.alertStyleBlinkBtn.classList.toggle('active', isBlinking);
+    if (this.alertStyleToneBtn) this.alertStyleToneBtn.classList.toggle('active', !isBlinking);
+
+    if (isBlinking) {
+      if (this.alarmToneSelect) this.alarmToneSelect.value = 'none';
+      if (this.toneSectionWrapper) this.toneSectionWrapper.classList.add('tone-section-muted');
+    } else {
+      if (this.alarmToneSelect && this.alarmToneSelect.value === 'none') {
+        this.alarmToneSelect.value = 'grandfather-westminster';
+      }
+      if (this.toneSectionWrapper) this.toneSectionWrapper.classList.remove('tone-section-muted');
+    }
+    this.handleToneChange();
+  }
+
   handleToneChange() {
-    const isSilent = this.alarmToneSelect.value === 'none';
+    const isSilent = this.alarmToneSelect && this.alarmToneSelect.value === 'none';
+    if (this.alertStyleBlinkBtn) this.alertStyleBlinkBtn.classList.toggle('active', isSilent);
+    if (this.alertStyleToneBtn) this.alertStyleToneBtn.classList.toggle('active', !isSilent);
+    if (this.toneSectionWrapper) this.toneSectionWrapper.classList.toggle('tone-section-muted', isSilent);
+
     if (isSilent) {
       if (this.alarmVolumeRange) this.alarmVolumeRange.disabled = true;
       if (this.volumeValueLabel) this.volumeValueLabel.textContent = 'Muted (0%)';
@@ -781,6 +818,10 @@ class ChronosApp {
     this.alarmSnoozeSelect.value = '5';
     this.alarmVolumeRange.value = '80';
     this.volumeValueLabel.textContent = '80%';
+    if (this.alarmAutoDismissSelect) {
+      this.alarmAutoDismissSelect.value = defaults.autoDismissSeconds !== undefined ? String(defaults.autoDismissSeconds) : '10';
+    }
+    this.setAlertStyle(defaults.tone === 'none' || defaults.isBlinking ? 'blinking' : 'tone');
 
     // Default: Every day or Weekdays for meetings
     this.applyRepeatPreset(defaults.label ? 'weekdays' : 'daily');
@@ -810,6 +851,10 @@ class ChronosApp {
     this.alarmSnoozeSelect.value = String(alarm.snoozeMinutes || 5);
     this.alarmVolumeRange.value = String(alarm.volume !== undefined ? alarm.volume : 80);
     this.volumeValueLabel.textContent = `${alarm.volume || 80}%`;
+    if (this.alarmAutoDismissSelect) {
+      this.alarmAutoDismissSelect.value = String(alarm.autoDismissSeconds !== undefined ? alarm.autoDismissSeconds : 10);
+    }
+    this.setAlertStyle(alarm.tone === 'none' || alarm.isBlinking ? 'blinking' : 'tone');
 
     // Set day checkboxes
     this.dayCheckboxes.forEach(cb => {
@@ -963,6 +1008,8 @@ class ChronosApp {
       tone: this.alarmToneSelect.value,
       volume: Number(this.alarmVolumeRange.value) || 80,
       snoozeMinutes: Number(this.alarmSnoozeSelect.value) || 5,
+      autoDismissSeconds: this.alarmAutoDismissSelect ? Number(this.alarmAutoDismissSelect.value) : 10,
+      isBlinking: this.alarmToneSelect.value === 'none',
       repeatDays: checkedDays,
       enabled: true
     };

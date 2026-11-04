@@ -23,6 +23,7 @@
       display: flex;
       flex-direction: column;
       animation: alertPulse 1.2s infinite alternate ease-in-out;
+      transition: background 0.3s ease, border-color 0.3s ease;
     }
 
     @keyframes alertPulse {
@@ -33,6 +34,29 @@
       100% {
         border-color: #fbbf24;
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 35px rgba(251, 191, 36, 0.5);
+      }
+    }
+
+    /* Discreet Blinking Mode for Meetings (Visual only, gentle glow cycle) */
+    body.is-blinking {
+      animation: discreetMeetingBlink 1.2s infinite ease-in-out !important;
+    }
+
+    @keyframes discreetMeetingBlink {
+      0% {
+        border-color: #38bdf8;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.85), 0 0 15px rgba(56, 189, 248, 0.4);
+        background: rgba(11, 15, 25, 0.96);
+      }
+      50% {
+        border-color: #fbbf24;
+        box-shadow: 0 10px 45px rgba(0, 0, 0, 0.9), 0 0 32px rgba(251, 191, 36, 0.65);
+        background: rgba(26, 20, 10, 0.96);
+      }
+      100% {
+        border-color: #38bdf8;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.85), 0 0 15px rgba(56, 189, 248, 0.4);
+        background: rgba(11, 15, 25, 0.96);
       }
     }
 
@@ -62,6 +86,10 @@
       color: #f43f5e;
     }
 
+    body.is-blinking .badge {
+      color: #38bdf8;
+    }
+
     .pulse-dot {
       width: 8px;
       height: 8px;
@@ -69,6 +97,11 @@
       background: #f43f5e;
       box-shadow: 0 0 8px #f43f5e;
       animation: blink 0.8s infinite alternate;
+    }
+
+    body.is-blinking .pulse-dot {
+      background: #38bdf8;
+      box-shadow: 0 0 8px #38bdf8;
     }
 
     @keyframes blink {
@@ -83,6 +116,21 @@
       gap: 8px;
     }
 
+    .auto-close-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      padding: 2px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .auto-close-badge.hidden {
+      display: none !important;
+    }
+
     .pin-badge {
       font-size: 0.68rem;
       font-weight: 700;
@@ -94,7 +142,7 @@
     }
 
     .content {
-      padding: 14px 18px;
+      padding: 12px 18px 8px;
       display: flex;
       flex-direction: column;
       flex: 1;
@@ -138,16 +186,35 @@
       display: none;
     }
 
+    /* Auto-dismiss progress countdown bar */
+    .auto-close-bar-wrap {
+      width: 100%;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .auto-close-bar-wrap.hidden {
+      display: none !important;
+    }
+
+    .auto-close-bar-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #38bdf8, #fbbf24);
+      transition: width 0.1s linear;
+    }
+
     .btn-row {
       -webkit-app-region: no-drag;
       display: flex;
       gap: 10px;
-      padding: 12px 18px 16px;
+      padding: 10px 18px 14px;
     }
 
     .btn {
       flex: 1;
-      padding: 10px;
+      padding: 9px;
       border-radius: 8px;
       font-size: 0.86rem;
       font-weight: 700;
@@ -185,15 +252,25 @@
       background: #e11d48;
       box-shadow: 0 6px 18px rgba(244, 63, 94, 0.6);
     }
+
+    body.is-blinking .btn-dismiss {
+      background: #0284c7;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45);
+    }
+    body.is-blinking .btn-dismiss:hover {
+      background: #0369a1;
+      box-shadow: 0 6px 18px rgba(2, 132, 199, 0.6);
+    }
   </style>
 </head>
 <body>
   <div class="drag-header">
-    <div class="badge">
-      <span class="pulse-dot"></span>
-      <span>MEETING ALARM</span>
+    <div class="badge" id="alertBadge">
+      <span class="pulse-dot" id="pulseDot"></span>
+      <span id="badgeTitle">MEETING ALARM</span>
     </div>
     <div class="header-actions">
+      <span id="autoCloseBadge" class="auto-close-badge hidden">Auto-close: 10s</span>
       <span class="pin-badge">ALWAYS ON TOP</span>
     </div>
   </div>
@@ -202,6 +279,10 @@
     <div id="alarmTime" class="alarm-time">00:00</div>
     <div id="alarmLabel" class="alarm-label">Meeting Alert</div>
     <div id="alarmMemo" class="alarm-memo hidden"></div>
+  </div>
+
+  <div id="autoCloseBarWrap" class="auto-close-bar-wrap hidden">
+    <div id="autoCloseBarFill" class="auto-close-bar-fill"></div>
   </div>
 
   <div class="btn-row">
@@ -227,9 +308,31 @@
     const alarmMemoEl = document.getElementById('alarmMemo');
     const snoozeBtn = document.getElementById('snoozeBtn');
     const dismissBtn = document.getElementById('dismissBtn');
+    const badgeTitle = document.getElementById('badgeTitle');
+    const autoCloseBadge = document.getElementById('autoCloseBadge');
+    const autoCloseBarWrap = document.getElementById('autoCloseBarWrap');
+    const autoCloseBarFill = document.getElementById('autoCloseBarFill');
+
+    let autoCloseTimer = null;
+    let autoCloseInterval = null;
+
+    function clearAutoClose() {
+      if (autoCloseTimer) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
+      if (autoCloseInterval) {
+        clearInterval(autoCloseInterval);
+        autoCloseInterval = null;
+      }
+      if (autoCloseBadge) autoCloseBadge.classList.add('hidden');
+      if (autoCloseBarWrap) autoCloseBarWrap.classList.add('hidden');
+    }
 
     function applyAlarmData(data) {
       if (!data) return;
+      clearAutoClose();
+
       if (data.time) alarmTimeEl.textContent = data.time;
       if (data.label) alarmLabelEl.textContent = data.label;
       if (data.snoozeMinutes) snoozeBtn.textContent = `Snooze (${data.snoozeMinutes}m)`;
@@ -240,6 +343,48 @@
       } else {
         alarmMemoEl.classList.add('hidden');
       }
+
+      // Check if Blinking / Silent mode
+      const isBlinking = Boolean(data.isBlinking || data.tone === 'none');
+      if (isBlinking) {
+        document.body.classList.add('is-blinking');
+        badgeTitle.textContent = '⚡ DISCREET BLINK';
+      } else {
+        document.body.classList.remove('is-blinking');
+        badgeTitle.textContent = 'MEETING ALARM';
+      }
+
+      // Auto-dismiss countdown timer (avoids meeting distraction)
+      const autoSeconds = Number(data.autoDismissSeconds);
+      if (autoSeconds > 0) {
+        autoCloseBadge.classList.remove('hidden');
+        autoCloseBarWrap.classList.remove('hidden');
+
+        const startTime = Date.now();
+        const totalMs = autoSeconds * 1000;
+
+        autoCloseBadge.textContent = `Auto-close: ${autoSeconds}s`;
+
+        autoCloseInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          const remainingMs = Math.max(0, totalMs - elapsed);
+          const remainingSec = Math.ceil(remainingMs / 1000);
+
+          autoCloseBadge.textContent = `Auto-close: ${remainingSec}s`;
+          const pct = Math.max(0, (remainingMs / totalMs) * 100);
+          autoCloseBarFill.style.width = `${pct}%`;
+
+          if (remainingMs <= 0) {
+            clearAutoClose();
+            sendAction('dismiss');
+          }
+        }, 100);
+
+        autoCloseTimer = setTimeout(() => {
+          clearAutoClose();
+          sendAction('dismiss');
+        }, totalMs);
+      }
     }
 
     // Check URL parameters for browser popup window support
@@ -249,7 +394,10 @@
         time: urlParams.get('time'),
         label: urlParams.get('label') || 'Meeting Alert',
         message: urlParams.get('message') || '',
-        snoozeMinutes: urlParams.get('snooze') || 10
+        snoozeMinutes: urlParams.get('snooze') || 10,
+        tone: urlParams.get('tone') || 'grandfather-westminster',
+        autoDismissSeconds: urlParams.get('autoclose') || 10,
+        isBlinking: urlParams.get('blinking') === 'true'
       });
     }
 
@@ -263,6 +411,7 @@
           if (event.data.type === 'alert:data') {
             applyAlarmData(event.data.data);
           } else if (event.data.type === 'alert:dismiss' || event.data.type === 'alert:snooze') {
+            clearAutoClose();
             if (!isElectron) window.close();
           }
         }
@@ -276,6 +425,7 @@
     });
 
     function sendAction(action) {
+      clearAutoClose();
       if (isElectron && ipcRenderer) {
         ipcRenderer.send('alert:action', action);
       }
